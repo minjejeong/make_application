@@ -1,0 +1,1108 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#14161B">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>둘이서 한잔</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gaegu:wght@400;700&family=Noto+Sans+KR:wght@400;500;700;900&display=swap">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+/* 술집은 어둡다 — 라이트 테마 없이 이 하나의 세계로 확정한다.
+   모든 색을 명시적으로 칠해 호스트 배경을 빌리지 않는다. */
+:root{
+  --bg:#14161B;        /* 푸른기 도는 밤 */
+  --bg2:#191C22;
+  --card:#1D2027;      /* 코스터 */
+  --card2:#252932;
+  --line:#333944;
+  --txt:#EFE9DC;       /* 따뜻한 오프화이트 */
+  --dim:#A8A296;
+  --dim2:#726D64;
+  --acc:#7FBF6A;       /* 소주병 초록 */
+  --acc2:#F0A868;      /* 백열등 주황 */
+  --blush:#E2647A;     /* 벌칙 */
+  --ok:#7FBF6A;
+  --warn:#F0A868;
+  --sh:0 10px 34px rgba(0,0,0,.55);
+  --disp:"Gaegu","Noto Sans KR",sans-serif;
+}
+html,body{height:100%}
+body{
+  background:var(--bg); color:var(--txt);
+  font-family:"Noto Sans KR",-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  -webkit-font-smoothing:antialiased; overflow-x:hidden;
+  -webkit-tap-highlight-color:transparent;
+  /* 테이블 위 백열등 하나 */
+  background-image:radial-gradient(120% 55% at 50% -8%, rgba(240,168,104,.10), transparent 62%);
+  background-attachment:fixed;
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms !important;transition-duration:.01ms !important}
+}
+:focus-visible{outline:2px solid var(--acc2);outline-offset:3px;border-radius:8px}
+#app{
+  min-height:100dvh; max-width:520px; margin:0 auto;
+  padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 16px);
+  display:flex; flex-direction:column;
+}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+input{font:inherit}
+
+/* ---------- 공통 ---------- */
+.btn{
+  display:flex; align-items:center; justify-content:center; gap:8px;
+  min-height:56px; padding:14px 18px; border-radius:16px;
+  background:var(--card2); border:1px solid var(--line);
+  font-size:17px; font-weight:600; text-align:center; line-height:1.35;
+  transition:transform .08s ease, filter .15s ease;
+}
+.btn:active{transform:scale(.975)}
+.btn.primary{background:var(--acc);border-color:transparent;color:#14200F;font-weight:700}
+.btn.ghost{background:transparent;color:var(--dim)}
+.btn.ok{background:rgba(61,220,151,.14);border-color:rgba(61,220,151,.4);color:var(--ok)}
+.btn.wide{width:100%}
+.btn[disabled]{opacity:.4;pointer-events:none}
+.stack{display:flex;flex-direction:column;gap:12px}
+.grow{flex:1}
+.center{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+.hide{display:none !important}
+
+.topbar{
+  display:flex;align-items:center;gap:10px;
+  padding:14px 2px 10px; min-height:56px;
+}
+.topbar h2{font-family:var(--disp);font-size:24px;font-weight:700;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.iconbtn{
+  width:40px;height:40px;border-radius:12px;display:grid;place-items:center;
+  font-size:18px;color:var(--dim);background:var(--card);border:1px solid var(--line);flex:none;
+}
+
+.card{
+  background:var(--card); border:1px solid var(--line); border-radius:20px;
+  padding:28px 22px; box-shadow:var(--sh); position:relative;
+}
+/* 코스터 안쪽 실선 */
+.card::after{
+  content:""; position:absolute; inset:7px; border-radius:14px;
+  border:1px solid rgba(239,233,220,.055); pointer-events:none;
+}
+.qtext{
+  font-family:var(--disp); font-size:31px; font-weight:700;
+  line-height:1.45; word-break:keep-all; text-wrap:balance;
+  letter-spacing:.01em;
+}
+.label{font-size:13px;color:var(--dim2);font-weight:600;letter-spacing:.04em}
+.hint{font-size:14px;color:var(--dim);line-height:1.6;word-break:keep-all}
+
+/* 미션 배지 */
+#missionBar{display:flex;flex-direction:column;gap:6px;margin-bottom:8px}
+.mbadge{
+  display:flex;align-items:center;gap:8px;
+  background:rgba(255,200,87,.12);border:1px solid rgba(255,200,87,.35);
+  border-radius:12px;padding:9px 12px;font-size:13px;color:var(--warn);
+  line-height:1.4;text-align:left;word-break:keep-all;
+}
+.mbadge span{flex:1}
+.mbadge b{font-size:11px;opacity:.75;font-weight:700;flex:none}
+
+/* ---------- PIN ---------- */
+#pinView{flex:1;justify-content:center;gap:22px;padding-bottom:40px}
+.logo{font-family:var(--disp);font-size:56px;font-weight:700;letter-spacing:.01em;line-height:1.1}
+.logo em{font-style:normal;color:var(--acc)}
+.dots{display:flex;gap:16px;margin:6px 0 2px}
+.dot{width:16px;height:16px;border-radius:50%;border:2px solid var(--line);transition:.15s}
+.dot.on{background:var(--acc);border-color:var(--acc)}
+.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;width:100%;max-width:300px}
+.pad .btn{min-height:64px;font-size:24px;font-weight:600;border-radius:18px}
+.shake{animation:sh .35s}
+@keyframes sh{10%,90%{transform:translateX(-4px)}30%,70%{transform:translateX(7px)}50%{transform:translateX(-7px)}}
+
+/* ---------- 로비 ---------- */
+.names{display:flex;gap:10px;align-items:center}
+.names input{
+  flex:1;min-width:0;background:var(--card);border:1px solid var(--line);color:var(--txt);
+  border-radius:14px;padding:14px;font-size:16px;text-align:center;font-weight:600;
+}
+.names input:focus{outline:none;border-color:var(--acc2)}
+.vs{font-size:13px;color:var(--dim2);font-weight:700;flex:none}
+.seg{display:flex;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:5px}
+.seg button{flex:1;padding:11px 4px;border-radius:10px;font-size:14px;font-weight:600;color:var(--dim);min-height:0}
+.seg button.on{background:var(--card2);color:var(--txt);box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.mode{
+  background:var(--card);border:1px solid var(--line);border-radius:18px;
+  padding:16px 13px;text-align:left;min-height:98px;
+  display:flex;flex-direction:column;gap:5px;justify-content:flex-start;
+  transition:transform .08s ease;
+}
+.mode:active{transform:scale(.97)}
+.mode .ic{font-size:22px;line-height:1}
+.mode .nm{font-family:var(--disp);font-size:21px;font-weight:700;line-height:1.2;letter-spacing:.01em}
+.mode .ds{font-size:11.5px;color:var(--dim2);line-height:1.45;word-break:keep-all}
+.tier{
+  font-size:11px;color:var(--dim2);font-weight:700;margin:22px 0 9px;
+  letter-spacing:.16em;text-transform:uppercase;
+  display:flex;align-items:center;gap:10px;
+}
+.tier::after{content:"";flex:1;height:1px;background:var(--line)}
+
+/* ---------- 게임 공통 ---------- */
+#gameView{flex:1;display:flex;flex-direction:column}
+#gameBody{flex:1;display:flex;flex-direction:column;justify-content:center;gap:16px;padding:8px 0 16px}
+.turn{
+  display:inline-flex;align-self:center;align-items:center;gap:7px;
+  background:rgba(240,168,104,.10);border:1px solid rgba(240,168,104,.32);
+  border-radius:999px;padding:8px 17px;font-size:14px;font-weight:700;
+  color:var(--acc2);letter-spacing:.01em;
+}
+.choice{
+  background:var(--card);border:2px solid var(--line);border-radius:20px;
+  padding:22px 18px;font-size:18px;font-weight:700;line-height:1.45;
+  min-height:96px;display:flex;align-items:center;justify-content:center;
+  text-align:center;word-break:keep-all;transition:.12s;
+}
+.choice:active{transform:scale(.98)}
+.choice.pick{border-color:var(--acc);background:rgba(127,191,106,.13)}
+.res{font-family:var(--disp);font-size:38px;font-weight:700;line-height:1.3;text-wrap:balance}
+.res.good{color:var(--acc)} .res.bad{color:var(--blush)}
+.drink{
+  background:rgba(226,100,122,.12);border:1px solid rgba(226,100,122,.42);
+  border-radius:16px;padding:17px;font-size:19px;font-weight:700;color:var(--blush);
+  text-align:center;line-height:1.45;word-break:keep-all;
+}
+.timer{
+  font-size:68px;font-weight:900;font-variant-numeric:tabular-nums;line-height:1;
+  color:var(--txt);letter-spacing:-.02em;
+}
+.timer.hot{color:var(--blush)}
+.tin{
+  width:100%;background:var(--card);border:1px solid var(--line);color:var(--txt);
+  border-radius:16px;padding:18px;font-size:20px;text-align:center;font-weight:700;
+}
+.tin:focus{outline:none;border-color:var(--acc2)}
+.revealbox{background:var(--bg2);border:1px solid var(--line);border-radius:16px;padding:16px;text-align:center}
+.revealbox .who{font-size:12px;color:var(--dim2);font-weight:700;margin-bottom:6px}
+.revealbox .val{font-size:20px;font-weight:700;word-break:break-word}
+
+/* 넘기기 인터스티셜 */
+#pass{
+  position:fixed;inset:0;z-index:90;background:var(--bg);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:24px;padding:32px;text-align:center;
+}
+#pass .big{font-size:56px}
+#pass .to{font-family:var(--disp);font-size:40px;font-weight:700;line-height:1.3;word-break:keep-all;text-wrap:balance}
+
+/* 룰렛 */
+.chambers{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.ch{
+  aspect-ratio:1;border-radius:50%;background:var(--card);border:2px solid var(--line);
+  display:grid;place-items:center;font-size:24px;font-weight:800;color:var(--dim2);
+}
+.ch:active{transform:scale(.95)}
+.ch.used{opacity:.35;pointer-events:none}
+.ch.boom{background:rgba(226,100,122,.2);border-color:var(--blush);color:var(--blush)}
+.ch.safe{background:rgba(61,220,151,.14);border-color:var(--ok);color:var(--ok)}
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- PIN -->
+  <div id="pinView" class="center hide">
+    <div class="logo">둘이서 <em>한잔</em></div>
+    <div class="hint" id="pinMsg">비밀번호 4자리를 입력하세요</div>
+    <div class="dots" id="dots"></div>
+    <div class="pad" id="pad"></div>
+  </div>
+
+  <!-- 로비 -->
+  <div id="lobbyView" class="hide">
+    <div class="topbar">
+      <h2>둘이서 한잔</h2>
+      <button class="iconbtn" id="lockBtn" aria-label="잠그기">🔒</button>
+    </div>
+    <div id="missionBar"></div>
+    <div class="stack">
+      <div class="names">
+        <input id="nameA" maxlength="6" placeholder="이름 1">
+        <div class="vs">VS</div>
+        <input id="nameB" maxlength="6" placeholder="이름 2">
+      </div>
+      <div>
+        <div class="label" style="margin:6px 0 8px">수위</div>
+        <div class="seg" id="levelSeg">
+          <button data-lv="1">순한맛</button>
+          <button data-lv="2">매운맛</button>
+          <button data-lv="3">핵불닭</button>
+        </div>
+      </div>
+      <button class="btn primary wide" id="randomBtn">🎲 랜덤으로 시작</button>
+    </div>
+    <div id="modeList"></div>
+    <div style="height:20px"></div>
+  </div>
+
+  <!-- 게임 -->
+  <div id="gameView" class="hide">
+    <div class="topbar">
+      <button class="iconbtn" id="exitBtn" aria-label="나가기">←</button>
+      <h2 id="gameTitle"></h2>
+    </div>
+    <div id="missionBar2"></div>
+    <div id="gameBody"></div>
+  </div>
+</div>
+
+<!-- 폰 넘기기 -->
+<div id="pass" class="hide">
+  <div class="big">📱</div>
+  <div class="to" id="passTo"></div>
+  <div class="hint" id="passHint">상대가 화면을 보지 않게 하세요</div>
+  <button class="btn primary" id="passOk" style="min-width:220px">준비 완료</button>
+</div>
+
+<script>
+"use strict";
+
+/* =====================================================================
+   문항 데이터 — 여기만 고치면 문항이 추가/수정됩니다.
+   level: 1=순한맛 2=매운맛 3=핵불닭   ({A},{B}는 플레이어 이름으로 치환)
+   ===================================================================== */
+const CONTENT = {
+  // 1. 밸런스 게임
+  balance: [
+    {a:"평생 여름만", b:"평생 겨울만", level:1},
+    {a:"돈 많은 백수", b:"적당히 벌는 워커홀릭", level:1},
+    {a:"과거로 1년", b:"미래로 1년", level:1},
+    {a:"평생 라면만", b:"평생 치킨만", level:1},
+    {a:"모든 사람이 내 생각을 앎", b:"내가 모든 사람 생각을 앎", level:1},
+    {a:"연봉 2배 야근 매일", b:"연봉 그대로 칼퇴", level:1},
+    {a:"애인의 과거를 다 앎", b:"영원히 모름", level:2},
+    {a:"연락 안 되는 완벽한 사람", b:"평범한데 연락 잘 되는 사람", level:2},
+    {a:"친구의 비밀을 알게 됨", b:"내 비밀이 친구에게 알려짐", level:2},
+    {a:"전 애인과 재회", b:"평생 솔로", level:2},
+    {a:"내 연애사가 전부 공개", b:"내 통장이 전부 공개", level:3},
+    {a:"애인이 바람 핀 걸 나만 앎", b:"내가 바람 핀 걸 모두가 앎", level:3},
+    {a:"평생 거짓말 못 함", b:"평생 진심 말 못 함", level:3},
+  ],
+
+  // 2. 질문 카드
+  truth: [
+    {q:"최근에 제일 크게 웃었던 순간은?", level:1},
+    {q:"어릴 때 되고 싶었던 직업은? 지금은?", level:1},
+    {q:"인생 최고의 여행지 한 곳만 꼽는다면?", level:1},
+    {q:"{B}를 처음 봤을 때 첫인상은 솔직히?", level:1},
+    {q:"요즘 제일 스트레스 받는 게 뭐야?", level:1},
+    {q:"돈 걱정이 없다면 내일 뭘 할래?", level:1},
+    {q:"가장 후회하는 선택 하나만 말해줘.", level:2},
+    {q:"{B}한테 고마웠는데 말 못 한 거 있어?", level:2},
+    {q:"남들한테 말 안 한 콤플렉스가 있다면?", level:2},
+    {q:"가장 최근에 운 게 언제야? 왜였어?", level:2},
+    {q:"살면서 제일 크게 거짓말한 건 뭐야?", level:3},
+    {q:"{B}에게 서운했는데 참고 넘어간 적 있어?", level:3},
+    {q:"지금 이 자리에서 가장 하기 싫은 질문은? 그거 대답해.", level:3},
+    {q:"연애할 때 절대 못 참는 거 하나는?", level:3},
+  ],
+
+  // 3. 나에 대한 O/X (진술의 참/거짓을 본인이 정하고 상대가 맞힘)
+  ox: [
+    {s:"나는 아침형 인간이다", level:1},
+    {s:"나는 민트초코를 좋아한다", level:1},
+    {s:"나는 공포영화를 혼자 볼 수 있다", level:1},
+    {s:"나는 번지점프를 해본 적 있다", level:1},
+    {s:"나는 첫사랑 이름을 아직 기억한다", level:1},
+    {s:"나는 노래방 18번이 10년째 똑같다", level:1},
+    {s:"나는 이별을 먼저 말해본 적이 있다", level:2},
+    {s:"나는 밤새 술 마시고 출근한 적 있다", level:2},
+    {s:"나는 SNS에서 누군가를 몰래 훔쳐본 적 있다", level:2},
+    {s:"나는 친구의 애인을 좋아한 적 있다", level:3},
+    {s:"나는 지금 마음에 둔 사람이 있다", level:3},
+    {s:"나는 이 자리에 오기 전 오늘 약속을 취소하고 싶었다", level:3},
+  ],
+
+  // 4. 둘 중 누구?
+  whoMore: [
+    {q:"둘 중 더 늦잠 잘 것 같은 사람은?", level:1},
+    {q:"둘 중 더 돈을 잘 모을 것 같은 사람은?", level:1},
+    {q:"둘 중 더 길치일 것 같은 사람은?", level:1},
+    {q:"둘 중 무인도에서 오래 살아남을 사람은?", level:1},
+    {q:"둘 중 더 먼저 결혼할 것 같은 사람은?", level:1},
+    {q:"둘 중 더 화를 잘 참는 사람은?", level:1},
+    {q:"둘 중 더 연락을 씹는 사람은?", level:2},
+    {q:"둘 중 더 술버릇이 심한 사람은?", level:2},
+    {q:"둘 중 더 상처를 오래 담아두는 사람은?", level:2},
+    {q:"둘 중 더 이기적인 사람은?", level:3},
+    {q:"둘 중 더 비밀이 많은 사람은?", level:3},
+    {q:"둘 중 지금 더 취한 사람은?", level:3},
+  ],
+
+  // 5. 3초 룰
+  threeSec: [
+    {q:"빨간색 물건 3개"}, {q:"편의점에서 파는 안주 3개"},
+    {q:"아이돌 그룹 이름 3개"}, {q:"동물 이름 3개"},
+    {q:"서울에 있는 지하철역 3개"}, {q:"라면 브랜드 3개"},
+    {q:"영화 제목 3개"}, {q:"과일 이름 3개"},
+    {q:"운동 종목 3개"}, {q:"치킨 브랜드 3개"},
+    {q:"헤어질 때 하는 말 3개"}, {q:"술 이름 3개"},
+  ],
+
+  // 6. 초성 릴레이
+  initial: [
+    {category:"음식", chars:"ㄱㅈ"}, {category:"동물", chars:"ㅎㄹ"},
+    {category:"나라", chars:"ㄷㅇ"}, {category:"연예인", chars:"ㅇㅈㅇ"},
+    {category:"영화", chars:"ㄱㅇ"}, {category:"과일", chars:"ㅂㄴ"},
+    {category:"직업", chars:"ㅅㅅ"}, {category:"브랜드", chars:"ㄴㅇㅋ"},
+    {category:"지명", chars:"ㅂㅅ"}, {category:"술 안주", chars:"ㄱㅅ"},
+    {category:"운동", chars:"ㅇㄱ"}, {category:"가수", chars:"ㅇㅁ"},
+  ],
+
+  // 7. 텔레파시
+  telepathy: [
+    {word:"빨강"}, {word:"바다"}, {word:"겨울"}, {word:"소주"},
+    {word:"고양이"}, {word:"첫사랑"}, {word:"월요일"}, {word:"라면"},
+    {word:"여행"}, {word:"밤"}, {word:"학교"}, {word:"선물"},
+  ],
+
+  // 8. 미션 카드 (지속 룰)
+  mission: [
+    {text:"말끝마다 '~다냥'을 붙인다", level:1},
+    {text:"상대 이름을 부를 때 '님'을 붙인다", level:1},
+    {text:"웃으면 안 된다", level:1},
+    {text:"질문에 질문으로 답하면 안 된다", level:1},
+    {text:"'나'라는 단어를 쓰면 안 된다", level:1},
+    {text:"모든 말을 존댓말로 한다", level:1},
+    {text:"상대가 마실 때마다 박수를 친다", level:2},
+    {text:"손동작 없이 말한다", level:2},
+    {text:"'아니'로 문장을 시작하면 안 된다", level:2},
+    {text:"상대 말에 무조건 먼저 동의하고 시작한다", level:2},
+    {text:"자기 얘기를 먼저 꺼내면 안 된다", level:3},
+    {text:"상대를 애칭으로만 부른다", level:3},
+  ],
+
+  // 10. 스토리 딜레마 — 각 노드는 선택지 2개, next로 이어짐
+  story: [
+    {
+      id:"island", title:"무인도",
+      start:{
+        text:"{A}와 {B}가 탄 배가 침몰했다. 눈을 뜨니 무인도. 가진 건 물 한 병뿐이다.",
+        a:{label:"둘이 나눠 마신다", next:"n1"},
+        b:{label:"한 명이 다 마시고 구조를 부르러 간다", next:"n2"},
+      },
+      nodes:{
+        n1:{text:"물은 금방 떨어졌다. 사흘째, 저 멀리 배가 보인다. 하지만 헤엄쳐 갈 힘은 한 사람 몫뿐.",
+            a:{label:"{A}가 간다", next:"end1"}, b:{label:"{B}가 간다", next:"end1"}},
+        n2:{text:"떠난 사람은 돌아오지 않았다. 남은 사람은 이틀 뒤 구조됐다.",
+            a:{label:"진실을 말한다", next:"end2"}, b:{label:"입을 다문다", next:"end2"}},
+      },
+      ends:{
+        end1:{text:"남은 사람은 끝내 구조되지 못했다. 서로를 위한 선택이 최선이었을까?", drink:"둘 다 한 잔"},
+        end2:{text:"평생 그 섬 얘기는 꺼내지 않기로 했다.", drink:"먼저 선택한 사람이 두 잔"},
+      },
+      level:1,
+    },
+    {
+      id:"lotto", title:"복권",
+      start:{
+        text:"{A}가 산 복권이 10억에 당첨됐다. 그런데 그 복권은 {B}가 고른 번호였다.",
+        a:{label:"반씩 나눈다", next:"n1"},
+        b:{label:"산 사람이 다 갖는다", next:"n2"},
+      },
+      nodes:{
+        n1:{text:"5억씩 나눴다. 1년 뒤, {B}는 전부 잃고 {A}에게 손을 벌린다.",
+            a:{label:"빌려준다", next:"end1"}, b:{label:"거절한다", next:"end2"}},
+        n2:{text:"{B}는 웃으며 축하해줬다. 하지만 그 뒤로 연락이 뜸해졌다.",
+            a:{label:"먼저 연락한다", next:"end1"}, b:{label:"기다린다", next:"end2"}},
+      },
+      ends:{
+        end1:{text:"관계는 남았지만, 예전 같지는 않았다.", drink:"둘 다 한 잔"},
+        end2:{text:"돈은 남았고 사람은 떠났다.", drink:"마지막에 선택한 사람이 두 잔"},
+      },
+      level:2,
+    },
+    {
+      id:"secret", title:"비밀",
+      start:{
+        text:"{A}는 {B}의 애인이 다른 사람과 있는 걸 목격했다. 확실하진 않다.",
+        a:{label:"{B}에게 바로 말한다", next:"n1"},
+        b:{label:"확인될 때까지 묻어둔다", next:"n2"},
+      },
+      nodes:{
+        n1:{text:"오해였다. {B}는 고마워했지만 어딘가 어색해졌다.",
+            a:{label:"사과한다", next:"end1"}, b:{label:"그럴 수도 있지 넘어간다", next:"end2"}},
+        n2:{text:"석 달 뒤 사실로 드러났다. {B}는 {A}가 알고 있었다는 걸 알게 된다.",
+            a:{label:"솔직히 인정한다", next:"end2"}, b:{label:"몰랐다고 한다", next:"end2"}},
+      },
+      ends:{
+        end1:{text:"어색함은 시간이 지우겠지.", drink:"{A}가 한 잔"},
+        end2:{text:"어떤 선택이든 누군가는 상처받는다.", drink:"둘 다 두 잔"},
+      },
+      level:3,
+    },
+  ],
+};
+
+/* =====================================================================
+   모드 정의
+   ===================================================================== */
+const MODES = [
+  {id:"balance",  ic:"⚖️", nm:"밸런스 게임", ds:"둘 다 고르고 동시 공개", tier:"A", lv:true},
+  {id:"truth",    ic:"💬", nm:"질문 카드",   ds:"솔직하게, 아니면 한 잔",  tier:"A", lv:true},
+  {id:"ox",       ic:"🙈", nm:"나에 대한 O/X", ds:"넌 날 얼마나 알아?",     tier:"A", lv:true},
+  {id:"whoMore",  ic:"👉", nm:"둘 중 누구?",  ds:"서로를 어떻게 보는지",    tier:"A", lv:true},
+  {id:"threeSec", ic:"⏱️", nm:"3초 룰",      ds:"3초 안에 세 개",         tier:"B", lv:false},
+  {id:"initial",  ic:"🔤", nm:"초성 릴레이",  ds:"막히면 마신다",          tier:"B", lv:false},
+  {id:"telepathy",ic:"🔮", nm:"텔레파시",     ds:"같은 답이면 세이프",      tier:"B", lv:false},
+  {id:"mission",  ic:"🎯", nm:"미션 카드",    ds:"어길 때마다 한 잔",       tier:"C", lv:true},
+  {id:"roulette", ic:"🔫", nm:"러시안 룰렛",  ds:"운에 맡긴다",            tier:"C", lv:false},
+  {id:"story",    ic:"📖", nm:"스토리 딜레마", ds:"선택이 결말을 바꾼다",   tier:"C", lv:true},
+];
+const TIER_NAME = {A:"대화가 터지는", B:"분위기 전환", C:"길게 가는"};
+const PIN_CODE = "0325";
+
+/* =====================================================================
+   상태 + 유틸
+   ===================================================================== */
+const S = {
+  names:{A:"", B:""},
+  level:2,
+  used:{},          // modeId -> [남은 인덱스]
+  missions:[],      // {text, who}
+  starter:"A",      // 라운드 선공 (모드 진입마다 교대)
+};
+
+const $  = (s) => document.querySelector(s);
+const el = (t, c, x) => { const n=document.createElement(t); if(c)n.className=c; if(x!=null)n.textContent=x; return n; };
+
+// localStorage: 시크릿 모드 등에서 throw할 수 있어 항상 감싼다.
+const store = {
+  get(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } },
+  set(k,v){ try{ localStorage.setItem(k,v); }catch(e){} },
+  del(k){ try{ localStorage.removeItem(k); }catch(e){} },
+};
+
+const nm = (k) => S.names[k] || (k==="A" ? "1번" : "2번");
+const fill = (s) => String(s).replace(/\{A\}/g, nm("A")).replace(/\{B\}/g, nm("B"));
+const other = (k) => k==="A" ? "B" : "A";
+
+function shuffle(arr){
+  const a = arr.slice();
+  for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
+  return a;
+}
+
+// 수위 필터 + 소진될 때까지 중복 없이 뽑기
+function draw(modeId, pool){
+  const list = pool.filter(it => it.level == null || it.level <= S.level);
+  if(!list.length) return null;
+  const key = modeId + "_" + S.level;
+  if(!S.used[key] || !S.used[key].length) S.used[key] = shuffle(list.map((_,i)=>i));
+  const idx = S.used[key].pop();
+  return list[idx];
+}
+
+let timerId = null;
+function stopTimer(){ if(timerId){ clearInterval(timerId); timerId = null; } }
+// tick(남은초) 매초 호출, 0이 되면 done()
+function startTimer(sec, tick, done){
+  stopTimer();
+  let left = sec;
+  tick(left);
+  timerId = setInterval(() => {
+    left--;
+    tick(left);
+    if(left <= 0){ stopTimer(); done && done(); }
+  }, 1000);
+}
+
+/* 화면 전환 */
+function show(view){
+  ["pinView","lobbyView","gameView"].forEach(v => $("#"+v).classList.toggle("hide", v !== view));
+}
+
+/* 폰 넘기기 인터스티셜 */
+function passPhone(toKey, cb, hint){
+  $("#passTo").textContent = nm(toKey) + "에게 넘기세요";
+  $("#passHint").textContent = hint || "상대가 화면을 보지 않게 하세요";
+  $("#pass").classList.remove("hide");
+  $("#passOk").onclick = () => { $("#pass").classList.add("hide"); cb(); };
+}
+
+/* =====================================================================
+   PIN
+   ===================================================================== */
+let pinBuf = "";
+function initPin(){
+  const pad = $("#pad");
+  pad.innerHTML = "";
+  ["1","2","3","4","5","6","7","8","9","","0","←"].forEach(k => {
+    if(k === ""){ pad.appendChild(el("div")); return; }
+    const b = el("button","btn",k);
+    b.onclick = () => pinKey(k);
+    pad.appendChild(b);
+  });
+  drawDots();
+}
+function drawDots(){
+  const d = $("#dots"); d.innerHTML = "";
+  for(let i=0;i<4;i++){ const x = el("div","dot"); if(i<pinBuf.length) x.classList.add("on"); d.appendChild(x); }
+}
+function pinKey(k){
+  if(k === "←"){ pinBuf = pinBuf.slice(0,-1); drawDots(); return; }
+  if(pinBuf.length >= 4) return;
+  pinBuf += k; drawDots();
+  if(pinBuf.length === 4){
+    setTimeout(() => {
+      if(pinBuf === PIN_CODE){ store.set("unlocked","1"); pinBuf=""; drawDots(); openLobby(); }
+      else{
+        $("#pinMsg").textContent = "비밀번호가 틀렸습니다";
+        $("#dots").classList.add("shake");
+        setTimeout(()=>{ $("#dots").classList.remove("shake"); pinBuf=""; drawDots(); }, 400);
+      }
+    }, 130);
+  }
+}
+
+/* =====================================================================
+   로비
+   ===================================================================== */
+function renderMissions(){
+  [$("#missionBar"), $("#missionBar2")].forEach(bar => {
+    if(!bar) return;
+    bar.innerHTML = "";
+    S.missions.forEach((m, i) => {
+      const b = el("div","mbadge");
+      b.appendChild(el("b","", "🎯 " + m.who));
+      b.appendChild(el("span","", m.text));
+      const x = el("button","", "✕");
+      x.style.cssText = "color:inherit;opacity:.6;font-size:15px;padding:2px 4px;flex:none";
+      x.onclick = () => { S.missions.splice(i,1); renderMissions(); };
+      b.appendChild(x);
+      bar.appendChild(b);
+    });
+  });
+}
+
+function openLobby(){
+  show("lobbyView");
+  renderMissions();
+}
+
+function initLobby(){
+  $("#nameA").value = store.get("nameA") || "";
+  $("#nameB").value = store.get("nameB") || "";
+  S.names.A = $("#nameA").value.trim();
+  S.names.B = $("#nameB").value.trim();
+  $("#nameA").oninput = e => { S.names.A = e.target.value.trim(); store.set("nameA", e.target.value); renderMissions(); };
+  $("#nameB").oninput = e => { S.names.B = e.target.value.trim(); store.set("nameB", e.target.value); renderMissions(); };
+
+  const savedLv = parseInt(store.get("level") || "2", 10);
+  S.level = [1,2,3].includes(savedLv) ? savedLv : 2;
+  const seg = $("#levelSeg");
+  [...seg.children].forEach(b => {
+    b.onclick = () => {
+      S.level = parseInt(b.dataset.lv, 10);
+      store.set("level", String(S.level));
+      S.used = {};   // 수위가 바뀌면 뽑기 풀도 초기화
+      syncSeg();
+    };
+  });
+  syncSeg();
+
+  $("#lockBtn").onclick = () => { store.del("unlocked"); pinBuf=""; drawDots(); $("#pinMsg").textContent="비밀번호 4자리를 입력하세요"; show("pinView"); };
+  $("#randomBtn").onclick = () => openGame(MODES[Math.floor(Math.random()*MODES.length)].id);
+
+  const list = $("#modeList");
+  list.innerHTML = "";
+  ["A","B","C"].forEach(t => {
+    list.appendChild(el("div","tier", TIER_NAME[t]));
+    const g = el("div","grid");
+    MODES.filter(m => m.tier === t).forEach(m => {
+      const c = el("button","mode");
+      c.appendChild(el("div","ic", m.ic));
+      c.appendChild(el("div","nm", m.nm));
+      c.appendChild(el("div","ds", m.ds));
+      c.onclick = () => openGame(m.id);
+      g.appendChild(c);
+    });
+    list.appendChild(g);
+  });
+}
+function syncSeg(){
+  [...$("#levelSeg").children].forEach(b => b.classList.toggle("on", parseInt(b.dataset.lv,10) === S.level));
+}
+
+/* =====================================================================
+   게임 진입 / 종료
+   ===================================================================== */
+const GAMES = {};
+
+function openGame(id){
+  const m = MODES.find(x => x.id === id);
+  $("#gameTitle").textContent = m.nm;
+  S.starter = other(S.starter);         // 모드 들어갈 때마다 선공 교대
+  show("gameView");
+  renderMissions();
+  GAMES[id]();
+}
+function body(){ stopTimer(); const b = $("#gameBody"); b.innerHTML = ""; return b; }
+function nextBtn(label, fn){ const b = el("button","btn primary wide", label || "다음 →"); b.onclick = fn; return b; }
+
+function initGame(){
+  $("#exitBtn").onclick = () => {
+    if(confirm("로비로 나갈까요?")){ stopTimer(); $("#pass").classList.add("hide"); openLobby(); }
+  };
+}
+
+/* ---------------------------------------------------------------------
+   1. 밸런스 게임 — 각자 몰래 고른 뒤 동시 공개
+   --------------------------------------------------------------------- */
+GAMES.balance = function(){
+  const q = draw("balance", CONTENT.balance);
+  const b = body();
+  if(!q) return b.appendChild(el("div","card center", "이 수위에 맞는 문항이 없어요"));
+
+  const picks = {};
+  const askFor = (who) => {
+    const bb = body();
+    bb.appendChild(el("div","turn", nm(who) + "의 선택"));
+    const card = el("div","stack");
+    ["a","b"].forEach(k => {
+      const c = el("button","choice", fill(q[k]));
+      c.onclick = () => {
+        picks[who] = k;
+        if(who === S.starter) passPhone(other(S.starter), () => askFor(other(S.starter)), "상대가 고르는 동안 보지 마세요");
+        else reveal();
+      };
+      card.appendChild(c);
+    });
+    bb.appendChild(card);
+    bb.appendChild(el("div","hint center", "고르면 화면이 넘어갑니다"));
+  };
+
+  const reveal = () => {
+    const bb = body();
+    const same = picks.A === picks.B;
+    bb.appendChild(el("div","res " + (same ? "good" : "bad"), same ? "취향 일치!" : "갈렸다!"));
+    ["A","B"].forEach(k => {
+      const r = el("div","revealbox");
+      r.appendChild(el("div","who", nm(k)));
+      r.appendChild(el("div","val", fill(q[picks[k]])));
+      bb.appendChild(r);
+    });
+    if(same){
+      bb.appendChild(el("div","drink", "통했으니까 기분 좋게 둘 다 한 잔 🥂"));
+      bb.appendChild(nextBtn("다음 문제 →", GAMES.balance));
+    }else{
+      bb.appendChild(el("div","hint center", "30초 동안 서로를 설득하세요"));
+      const t = el("div","timer center", "30");
+      bb.appendChild(t);
+      const done = el("button","btn primary wide", "설득 끝 → 진 사람이 한 잔");
+      done.onclick = () => { stopTimer(); GAMES.balance(); };
+      bb.appendChild(done);
+      startTimer(30, (s) => { t.textContent = s; t.classList.toggle("hot", s <= 10); },
+                 () => { t.textContent = "끝!"; });
+    }
+  };
+
+  b.appendChild(el("div","card center", "").appendChild(el("div","qtext","둘 중 하나만 고른다면?")).parentElement);
+  b.appendChild(el("div","hint center", "먼저 " + nm(S.starter) + "부터 고릅니다. 상대에게 보이지 않게!"));
+  b.appendChild(nextBtn("시작", () => askFor(S.starter)));
+};
+
+/* ---------------------------------------------------------------------
+   2. 질문 카드
+   --------------------------------------------------------------------- */
+GAMES.truth = function(){
+  const q = draw("truth", CONTENT.truth);
+  const b = body();
+  if(!q) return b.appendChild(el("div","card center", "이 수위에 맞는 문항이 없어요"));
+
+  const asker = S.starter, answerer = other(S.starter);
+  b.appendChild(el("div","turn", nm(asker) + " → " + nm(answerer)));
+  const card = el("div","card center");
+  card.appendChild(el("div","qtext", fill(q.q)));
+  b.appendChild(card);
+
+  const ok = el("button","btn ok wide", "✅ 대답했다");
+  ok.onclick = () => { S.starter = other(S.starter); GAMES.truth(); };
+  const pass = el("button","btn wide", "🍺 패스 (한 잔)");
+  pass.onclick = () => {
+    const bb = body();
+    bb.appendChild(el("div","drink", nm(answerer) + " 한 잔!"));
+    bb.appendChild(nextBtn("다음 질문 →", () => { S.starter = other(S.starter); GAMES.truth(); }));
+  };
+  b.appendChild(ok); b.appendChild(pass);
+};
+
+/* ---------------------------------------------------------------------
+   3. 나에 대한 O/X — 본인이 정답을 정하고, 상대가 맞힌다
+   --------------------------------------------------------------------- */
+GAMES.ox = function(){
+  const q = draw("ox", CONTENT.ox);
+  const b = body();
+  if(!q) return b.appendChild(el("div","card center", "이 수위에 맞는 문항이 없어요"));
+
+  const owner = S.starter, guesser = other(S.starter);
+  let answer = null;
+
+  const setAnswer = () => {
+    const bb = body();
+    bb.appendChild(el("div","turn", nm(owner) + "만 보세요"));
+    const card = el("div","card center");
+    card.appendChild(el("div","qtext", fill(q.s)));
+    bb.appendChild(card);
+    bb.appendChild(el("div","hint center", "사실이면 O, 아니면 X를 고르세요"));
+    const row = el("div","stack");
+    [["⭕ 맞다", true], ["❌ 아니다", false]].forEach(([lb, v]) => {
+      const c = el("button","choice", lb);
+      c.onclick = () => { answer = v; passPhone(guesser, guess, nm(owner) + "의 답이 가려졌습니다"); };
+      row.appendChild(c);
+    });
+    bb.appendChild(row);
+  };
+
+  const guess = () => {
+    const bb = body();
+    bb.appendChild(el("div","turn", nm(guesser) + "가 맞힐 차례"));
+    const card = el("div","card center");
+    card.appendChild(el("div","label", nm(owner) + "은(는)…"));
+    card.appendChild(el("div","qtext", fill(q.s)));
+    bb.appendChild(card);
+    const row = el("div","stack");
+    [["⭕ 맞을 것 같다", true], ["❌ 아닐 것 같다", false]].forEach(([lb, v]) => {
+      const c = el("button","choice", lb);
+      c.onclick = () => result(v);
+      row.appendChild(c);
+    });
+    bb.appendChild(row);
+  };
+
+  const result = (g) => {
+    const bb = body();
+    const hit = (g === answer);
+    bb.appendChild(el("div","res " + (hit ? "good" : "bad"), hit ? "정답! 🎯" : "땡! ❌"));
+    const r = el("div","revealbox");
+    r.appendChild(el("div","who", "실제 " + nm(owner) + "은(는)"));
+    r.appendChild(el("div","val", answer ? "⭕ 맞다" : "❌ 아니다"));
+    bb.appendChild(r);
+    bb.appendChild(el("div","drink", hit ? nm(owner) + " 한 잔! (읽혔네요)" : nm(guesser) + " 한 잔! (몰랐네요)"));
+    bb.appendChild(el("div","hint center", "왜 그렇게 생각했는지 얘기해보세요"));
+    bb.appendChild(nextBtn("다음 →", () => { S.starter = other(S.starter); GAMES.ox(); }));
+  };
+
+  b.appendChild(el("div","card center", "").appendChild(el("div","qtext","나에 대한 O/X")).parentElement);
+  b.appendChild(el("div","hint center", nm(owner) + "이(가) 자기 얘기의 정답을 정하고,\n" + nm(guesser) + "이(가) 맞힙니다"));
+  b.appendChild(nextBtn(nm(owner) + " 시작", setAnswer));
+};
+
+/* ---------------------------------------------------------------------
+   4. 둘 중 누구?
+   --------------------------------------------------------------------- */
+GAMES.whoMore = function(){
+  const q = draw("whoMore", CONTENT.whoMore);
+  const b = body();
+  if(!q) return b.appendChild(el("div","card center", "이 수위에 맞는 문항이 없어요"));
+
+  const picks = {};
+  const askFor = (who) => {
+    const bb = body();
+    bb.appendChild(el("div","turn", nm(who) + "의 선택"));
+    const card = el("div","card center");
+    card.appendChild(el("div","qtext", fill(q.q)));
+    bb.appendChild(card);
+    const row = el("div","stack");
+    ["A","B"].forEach(k => {
+      const c = el("button","choice", nm(k) + (k === who ? " (나)" : ""));
+      c.onclick = () => {
+        picks[who] = k;
+        if(who === S.starter) passPhone(other(S.starter), () => askFor(other(S.starter)), "상대가 고르는 동안 보지 마세요");
+        else reveal();
+      };
+      row.appendChild(c);
+    });
+    bb.appendChild(row);
+  };
+
+  const reveal = () => {
+    const bb = body();
+    const same = picks.A === picks.B;
+    bb.appendChild(el("div","res " + (same ? "good" : "bad"), same ? "의견 일치!" : "엇갈렸다!"));
+    ["A","B"].forEach(k => {
+      const r = el("div","revealbox");
+      r.appendChild(el("div","who", nm(k) + "의 답"));
+      r.appendChild(el("div","val", nm(picks[k])));
+      bb.appendChild(r);
+    });
+    bb.appendChild(el("div","drink", same ? nm(picks.A) + " 한 잔! (둘 다 그렇게 봤네요)" : "엇갈렸으니 둘 다 한 잔!"));
+    bb.appendChild(el("div","hint center", "왜 그렇게 골랐는지 얘기해보세요"));
+    bb.appendChild(nextBtn("다음 →", GAMES.whoMore));
+  };
+
+  b.appendChild(el("div","card center", "").appendChild(el("div","qtext","둘 중 누구?")).parentElement);
+  b.appendChild(el("div","hint center", "각자 몰래 고른 뒤 동시에 공개합니다"));
+  b.appendChild(nextBtn("시작", () => askFor(S.starter)));
+};
+
+/* ---------------------------------------------------------------------
+   5. 3초 룰
+   --------------------------------------------------------------------- */
+GAMES.threeSec = function(){
+  const q = draw("threeSec", CONTENT.threeSec);
+  const who = S.starter;
+  const b = body();
+  b.appendChild(el("div","turn", nm(who) + " 차례"));
+  const card = el("div","card center");
+  card.appendChild(el("div","qtext", fill(q.q)));
+  b.appendChild(card);
+  b.appendChild(el("div","hint center", "버튼을 누르면 3초가 시작됩니다"));
+
+  const go = el("button","btn primary wide", "시작!");
+  go.onclick = () => {
+    const bb = body();
+    bb.appendChild(el("div","turn", nm(who) + " 차례"));
+    const c2 = el("div","card center");
+    c2.appendChild(el("div","qtext", fill(q.q)));
+    bb.appendChild(c2);
+    const t = el("div","timer center hot", "3");
+    bb.appendChild(t);
+    startTimer(3, (s) => { t.textContent = s > 0 ? s : "끝!"; }, () => {
+      const b3 = body();
+      b3.appendChild(el("div","res", "시간 종료!"));
+      b3.appendChild(el("div","hint center", "세 개 다 말했나요?"));
+      const ok = el("button","btn ok wide", "✅ 성공");
+      ok.onclick = () => { S.starter = other(S.starter); GAMES.threeSec(); };
+      const no = el("button","btn wide", "🍺 실패 — " + nm(who) + " 한 잔");
+      no.onclick = () => { S.starter = other(S.starter); GAMES.threeSec(); };
+      b3.appendChild(ok); b3.appendChild(no);
+    });
+  };
+  b.appendChild(go);
+};
+
+/* ---------------------------------------------------------------------
+   6. 초성 릴레이
+   --------------------------------------------------------------------- */
+GAMES.initial = function(){
+  const q = draw("initial", CONTENT.initial);
+  let turn = S.starter, count = 0;
+
+  const round = () => {
+    const b = body();
+    b.appendChild(el("div","turn", nm(turn) + " 차례 · " + count + "번째"));
+    const card = el("div","card center");
+    card.appendChild(el("div","label", q.category));
+    card.appendChild(el("div","qtext", q.chars));
+    b.appendChild(card);
+    const t = el("div","timer center", "10");
+    b.appendChild(t);
+
+    const ok = el("button","btn ok wide", "✅ 말했다");
+    ok.onclick = () => { stopTimer(); count++; turn = other(turn); round(); };
+    const fail = el("button","btn wide", "🍺 못 하겠다");
+    fail.onclick = () => { stopTimer(); lose(); };
+    b.appendChild(ok); b.appendChild(fail);
+
+    startTimer(10, (s) => { t.textContent = s > 0 ? s : "0"; t.classList.toggle("hot", s <= 3); }, lose);
+  };
+
+  const lose = () => {
+    stopTimer();
+    const b = body();
+    b.appendChild(el("div","res bad", nm(turn) + " 패배!"));
+    b.appendChild(el("div","hint center", count + "개까지 이어졌습니다"));
+    b.appendChild(el("div","drink", nm(turn) + " 한 잔!"));
+    b.appendChild(nextBtn("다시 →", () => { S.starter = other(S.starter); GAMES.initial(); }));
+  };
+
+  const b = body();
+  b.appendChild(el("div","card center", "").appendChild(el("div","qtext","초성 릴레이")).parentElement);
+  b.appendChild(el("div","hint center", "제시된 초성으로 시작하는 단어를\n번갈아 말하세요. 10초 안에!"));
+  b.appendChild(nextBtn(nm(turn) + "부터 시작", round));
+};
+
+/* ---------------------------------------------------------------------
+   7. 텔레파시 — 각자 입력 후 동시 공개
+   --------------------------------------------------------------------- */
+GAMES.telepathy = function(){
+  const q = draw("telepathy", CONTENT.telepathy);
+  const ans = {};
+
+  const input = (who) => {
+    const b = body();
+    b.appendChild(el("div","turn", nm(who) + " 입력"));
+    const card = el("div","card center");
+    card.appendChild(el("div","label", "이 단어 하면 떠오르는 건?"));
+    card.appendChild(el("div","qtext", q.word));
+    b.appendChild(card);
+    const inp = el("input","tin");
+    inp.type = "text"; inp.maxLength = 12; inp.placeholder = "한 단어"; inp.autocomplete = "off";
+    b.appendChild(inp);
+    const go = el("button","btn primary wide", "입력 완료");
+    go.onclick = () => {
+      const v = inp.value.trim();
+      if(!v){ inp.focus(); return; }
+      ans[who] = v;
+      if(who === S.starter) passPhone(other(S.starter), () => input(other(S.starter)), "상대 답이 가려졌습니다");
+      else reveal();
+    };
+    b.appendChild(go);
+    setTimeout(()=>inp.focus(), 100);
+  };
+
+  const reveal = () => {
+    const b = body();
+    const norm = (s) => s.replace(/\s+/g,"").toLowerCase();
+    const same = norm(ans.A) === norm(ans.B);
+    b.appendChild(el("div","res " + (same ? "good" : "bad"), same ? "텔레파시 성공! 🔮" : "실패…"));
+    ["A","B"].forEach(k => {
+      const r = el("div","revealbox");
+      r.appendChild(el("div","who", nm(k)));
+      r.appendChild(el("div","val", ans[k]));
+      b.appendChild(r);
+    });
+    b.appendChild(el("div","drink", same ? "통했다! 둘 다 한 잔 🥂" : "안 통했다… 둘 다 한 잔 🍺"));
+    b.appendChild(nextBtn("다음 →", GAMES.telepathy));
+  };
+
+  const b = body();
+  b.appendChild(el("div","card center", "").appendChild(el("div","qtext","텔레파시")).parentElement);
+  b.appendChild(el("div","hint center", "같은 단어를 떠올리면 성공!\n각자 몰래 입력합니다"));
+  b.appendChild(nextBtn("시작", () => input(S.starter)));
+};
+
+/* ---------------------------------------------------------------------
+   8. 미션 카드 — 지속 룰 부여
+   --------------------------------------------------------------------- */
+GAMES.mission = function(){
+  const q = draw("mission", CONTENT.mission);
+  const b = body();
+  if(!q) return b.appendChild(el("div","card center", "이 수위에 맞는 문항이 없어요"));
+
+  const who = S.starter;
+  b.appendChild(el("div","turn", nm(who) + "의 미션"));
+  const card = el("div","card center");
+  card.appendChild(el("div","label", "지금부터 계속 지켜야 합니다"));
+  card.appendChild(el("div","qtext", fill(q.text)));
+  b.appendChild(card);
+  b.appendChild(el("div","hint center", "어길 때마다 한 잔.\n미션은 화면 위에 계속 표시됩니다"));
+
+  const take = el("button","btn primary wide", "미션 받기");
+  take.onclick = () => {
+    S.missions.push({text: fill(q.text), who: nm(who)});
+    renderMissions();
+    const bb = body();
+    bb.appendChild(el("div","res good", "미션 등록 완료!"));
+    bb.appendChild(el("div","hint center", "화면 위 배지를 확인하세요.\n미션을 끝낼 땐 배지의 ✕를 누르세요"));
+    bb.appendChild(nextBtn("다른 미션 →", () => { S.starter = other(S.starter); GAMES.mission(); }));
+    const back = el("button","btn ghost wide", "로비로");
+    back.onclick = openLobby;
+    bb.appendChild(back);
+  };
+  b.appendChild(take);
+};
+
+/* ---------------------------------------------------------------------
+   9. 러시안 룰렛
+   --------------------------------------------------------------------- */
+GAMES.roulette = function(){
+  const boom = Math.floor(Math.random() * 6);
+  let turn = S.starter, done = false;
+
+  const b = body();
+  b.appendChild(el("div","turn", "6칸 중 1칸이 당첨"));
+  b.appendChild(el("div","hint center", "번갈아 하나씩 고르세요.\n당첨된 사람이 마십니다"));
+  const grid = el("div","chambers");
+  const cells = [];
+  for(let i=0;i<6;i++){
+    const c = el("button","ch", "?");
+    c.onclick = () => {
+      if(done || c.classList.contains("used")) return;
+      c.classList.add("used");
+      if(i === boom){
+        done = true; stopTimer();
+        c.classList.remove("used"); c.classList.add("boom"); c.textContent = "💥";
+        status.textContent = "";
+        const r = el("div","drink", nm(turn) + " 당첨! 한 잔 🍺");
+        b.appendChild(r);
+        b.appendChild(nextBtn("다시 →", () => { S.starter = other(S.starter); GAMES.roulette(); }));
+      }else{
+        c.classList.add("safe"); c.textContent = "○";
+        turn = other(turn);
+        status.textContent = nm(turn) + " 차례";
+      }
+    };
+    cells.push(c); grid.appendChild(c);
+  }
+  b.appendChild(grid);
+  const status = el("div","turn", nm(turn) + " 차례");
+  b.appendChild(status);
+};
+
+/* ---------------------------------------------------------------------
+   10. 스토리 딜레마
+   --------------------------------------------------------------------- */
+GAMES.story = function(){
+  const st = draw("story", CONTENT.story);
+  const b = body();
+  if(!st) return b.appendChild(el("div","card center", "이 수위에 맞는 문항이 없어요"));
+
+  let chooser = S.starter;
+
+  const scene = (node, key) => {
+    const bb = body();
+    bb.appendChild(el("div","turn", nm(chooser) + "가 선택"));
+    const card = el("div","card");
+    card.appendChild(el("div","label", st.title));
+    const t = el("div","qtext", fill(node.text));
+    t.style.marginTop = "10px"; t.style.fontSize = "19px";
+    card.appendChild(t);
+    bb.appendChild(card);
+
+    const row = el("div","stack");
+    [node.a, node.b].forEach(op => {
+      const c = el("button","choice", fill(op.label));
+      c.style.minHeight = "80px"; c.style.fontSize = "17px";
+      c.onclick = () => {
+        chooser = other(chooser);
+        if(st.ends[op.next]) ending(st.ends[op.next]);
+        else scene(st.nodes[op.next], op.next);
+      };
+      row.appendChild(c);
+    });
+    bb.appendChild(row);
+    bb.appendChild(el("div","hint center", "고르기 전에 서로 상의해도 좋습니다"));
+  };
+
+  const ending = (e) => {
+    const bb = body();
+    bb.appendChild(el("div","res", "— 결말 —"));
+    const card = el("div","card center");
+    card.appendChild(el("div","qtext", fill(e.text)));
+    bb.appendChild(card);
+    bb.appendChild(el("div","drink", fill(e.drink)));
+    bb.appendChild(nextBtn("다른 이야기 →", () => { S.starter = other(S.starter); GAMES.story(); }));
+    const back = el("button","btn ghost wide", "로비로");
+    back.onclick = openLobby;
+    bb.appendChild(back);
+  };
+
+  b.appendChild(el("div","card center", "").appendChild(el("div","qtext", st.title)).parentElement);
+  b.appendChild(el("div","hint center", "선택에 따라 결말이 달라집니다.\n번갈아 가며 고르세요"));
+  b.appendChild(nextBtn("이야기 시작", () => scene(st.start, "start")));
+};
+
+/* =====================================================================
+   부팅
+   ===================================================================== */
+initPin();
+initLobby();
+initGame();
+if(store.get("unlocked") === "1") openLobby(); else show("pinView");
+</script>
+</body>
+</html>
