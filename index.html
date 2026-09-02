@@ -177,6 +177,25 @@ input{font:inherit}
 /* 핵불닭 전용 모드 */
 .mode.only{border-color:rgba(226,100,122,.45);background:rgba(226,100,122,.07)}
 .mode.only .nm{color:var(--blush)}
+
+/* 쫄? 난이도 룰렛 */
+.slot{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+  min-height:150px;border-radius:22px;border:2px solid var(--line);
+  background:var(--card);transition:border-color .2s, background .2s;
+}
+.slot-ic{font-size:52px;line-height:1}
+.slot-nm{font-family:var(--disp);font-size:30px;font-weight:700;letter-spacing:.01em}
+.slot.d1{border-color:var(--acc);background:rgba(127,191,106,.10)}
+.slot.d1 .slot-nm{color:var(--acc)}
+.slot.d2{border-color:var(--acc2);background:rgba(240,168,104,.10)}
+.slot.d2 .slot-nm{color:var(--acc2)}
+.slot.d3{border-color:var(--blush);background:rgba(226,100,122,.12)}
+.slot.d3 .slot-nm{color:var(--blush)}
+.slot.spinning .slot-ic{animation:slotpulse .09s linear infinite}
+.slot.landed{animation:slotpop .45s ease}
+@keyframes slotpulse{0%{opacity:.55;transform:scale(.94)}100%{opacity:1;transform:scale(1)}}
+@keyframes slotpop{0%{transform:scale(1)}35%{transform:scale(1.09)}100%{transform:scale(1)}}
 .res{font-family:var(--disp);font-size:38px;font-weight:700;line-height:1.3;text-wrap:balance}
 .res.good{color:var(--acc)} .res.bad{color:var(--blush)}
 .drink{
@@ -1168,6 +1187,32 @@ const CONTENT = {
     {text:"상대와 마주 앉아 눈만 보며 30초 버티기", dare:2},
     {text:"상대의 이름을 귓속말로 부르기", dare:2},
     {text:"상대에게 오늘 가장 하고 싶었던 스킨십 하기", dare:2},
+    // ── 최고 난이도 (실패 시 3잔)
+    {text:"상대의 눈을 보며 '사랑해'라고 진지하게 말하기", dare:3},
+    {text:"상대를 10초간 꼭 안아주기", dare:3},
+    {text:"상대의 손에 입맞추기", dare:3},
+    {text:"상대에게 지금 느끼는 감정을 숨김없이 고백하기", dare:3},
+    {text:"상대의 볼에 뽀뽀하기", dare:3},
+    {text:"상대를 무릎에 앉히거나 무릎에 앉기 (10초)", dare:3},
+    {text:"상대의 귀에 대고 좋아하는 점 속삭이기", dare:3},
+    {text:"상대와 이마를 맞대고 눈 감고 20초 있기", dare:3},
+    {text:"휴대폰 잠금 풀어서 상대에게 30초 넘기기", dare:3},
+    {text:"상대에게 내 갤러리 아무 폴더나 열어 보여주기", dare:3},
+    {text:"전 애인에게 보낸 마지막 메시지 읽어주기", dare:3},
+    {text:"상대의 손을 잡고 첫 경험 이야기 하기", dare:3},
+    {text:"상대를 뒤에서 안고 30초 있기", dare:3},
+    {text:"상대의 머리카락을 쓸어넘겨주며 눈 마주치기", dare:3},
+    {text:"지금 이 순간 상대에게 바라는 것을 솔직히 말하기", dare:3},
+    {text:"상대와 손깍지 끼고 30초간 아무 말 없이 있기", dare:3},
+    {text:"상대에게 내 검색기록 최근 5개 보여주기", dare:3},
+    {text:"상대의 목덜미에 숨결이 닿을 만큼 가까이 가기", dare:3},
+    {text:"상대를 이성으로 느낀 순간이 있었는지 답하기", dare:3},
+    {text:"상대와 코가 닿을 거리에서 10초 버티기", dare:3},
+    {text:"상대에게 오늘 밤 하고 싶은 걸 말하기", dare:3},
+    {text:"상대의 손을 잡고 '너 없으면 안 돼'라고 말하기", dare:3},
+    {text:"카톡 열어서 가장 최근 대화 상대 보여주기", dare:3},
+    {text:"상대를 안고 등을 쓰다듬으며 10초 있기", dare:3},
+    {text:"상대에게 지금까지 숨겨온 마음 하나 털어놓기", dare:3},
   ],
 };
 
@@ -1787,15 +1832,56 @@ GAMES.roulette = function(){
 
 /* ---------------------------------------------------------------------
    9. 쫄? — 핵불닭 전용 도전 모드.
-   dare 1 = 가벼움(실패 시 1잔), dare 2 = 스킨십 포함(실패 시 2잔)
+   난이도는 고르는 게 아니라 룰렛으로 뽑힌다.
+   dare 1 = 가벼움(1잔), 2 = 스킨십(2잔), 3 = 최고 난이도(3잔)
    --------------------------------------------------------------------- */
+const DARE_TIER = {
+  1:{nm:"가볍게",  ic:"🍺", cls:"d1"},
+  2:{nm:"세게",    ic:"🔥", cls:"d2"},
+  3:{nm:"미친놈",  ic:"💀", cls:"d3"},
+};
+
 GAMES.dare = function(){
+  const who = S.starter;
   const b = body();
+  b.appendChild(el("div","turn", nm(who) + "의 차례"));
   b.appendChild(el("div","card center", "").appendChild(el("div","qtext","쫄?")).parentElement);
-  b.appendChild(el("div","hint center", "도전을 받고 해내거나, 못 하겠으면 마신다.\n난이도가 높을수록 벌주도 크다"));
+  b.appendChild(el("div","hint center", "룰렛이 난이도를 정한다. 고를 수 없다.\n해내거나, 못 하겠으면 마신다"));
+
+  // 난이도 표시 슬롯 (룰렛이 여기서 돌아간다)
+  const slot = el("div","slot");
+  const slotIc = el("div","slot-ic", "❓");
+  const slotNm = el("div","slot-nm", "???");
+  slot.appendChild(slotIc); slot.appendChild(slotNm);
+  b.appendChild(slot);
+
+  const spin = el("button","btn primary wide", "🎰 룰렛 돌리기");
+  b.appendChild(spin);
+
+  spin.onclick = () => {
+    spin.disabled = true;
+    const landed = 1 + Math.floor(Math.random() * 3);
+    let ticks = 0;
+    // 점점 느려지는 느낌: 총 18틱 동안 돌다가 멈춘다
+    const roll = () => {
+      ticks++;
+      const showing = ticks >= 18 ? landed : (1 + (ticks % 3));
+      const t = DARE_TIER[showing];
+      slotIc.textContent = t.ic;
+      slotNm.textContent = t.nm;
+      slot.className = "slot spinning " + t.cls;
+      if(ticks >= 18){
+        stopTimer();
+        slot.className = "slot landed " + DARE_TIER[landed].cls;
+        setTimeout(() => run(landed), 450);
+      }
+    };
+    // startTimer는 1초 단위라 여기서는 짧은 간격으로 직접 돌린다
+    stopTimer();
+    timerId = setInterval(roll, 90);
+  };
 
   const pick = (want) => {
-    // dare 값이 want인 것들 중에서 중복 없이 뽑는다
     const pool = CONTENT.dare.filter(d => d.dare === want);
     const key = "dare" + want;
     if(!S.used[key] || !S.used[key].length) S.used[key] = shuffle(pool.map((_,i)=>i));
@@ -1803,48 +1889,37 @@ GAMES.dare = function(){
   };
 
   const run = (want) => {
+    stopTimer();
     const q = pick(want);
-    const who = S.starter;
-    const cups = want === 2 ? 2 : 1;
+    const t = DARE_TIER[want];
     const bb = body();
     bb.appendChild(el("div","turn", nm(who) + "의 도전"));
     const card = el("div","card center");
-    card.appendChild(el("div","label", want === 2 ? "🔥 센 도전 · 실패하면 2잔" : "실패하면 1잔"));
+    card.appendChild(el("div","label", t.ic + " " + t.nm + " · 못 하면 " + want + "잔"));
     card.appendChild(el("div","qtext", fill(q.text)));
     bb.appendChild(card);
 
+    const done = (success) => {
+      const b3 = body();
+      if(success){
+        b3.appendChild(el("div","res good", "해냈다! 😎"));
+        b3.appendChild(el("div","hint center", nm(other(who)) + " 차례로 넘어갑니다"));
+      }else{
+        b3.appendChild(el("div","res bad", "쫄았네 🐔"));
+        b3.appendChild(el("div","drink", nm(who) + " " + want + "잔!"));
+      }
+      b3.appendChild(nextBtn("다음 도전 →", () => { S.starter = other(who); GAMES.dare(); }));
+      const back = el("button","btn ghost wide", "로비로");
+      back.onclick = openLobby;
+      b3.appendChild(back);
+    };
+
     const ok = el("button","btn ok wide", "✅ 해냈다");
-    ok.onclick = () => {
-      const b3 = body();
-      b3.appendChild(el("div","res good", "성공! 😎"));
-      b3.appendChild(el("div","hint center", nm(other(who)) + " 차례로 넘어갑니다"));
-      b3.appendChild(nextBtn("다음 도전 →", () => { S.starter = other(who); GAMES.dare(); }));
-      const back = el("button","btn ghost wide", "로비로");
-      back.onclick = openLobby;
-      b3.appendChild(back);
-    };
-    const no = el("button","btn wide", "🍺 못 하겠다 (" + cups + "잔)");
-    no.onclick = () => {
-      const b3 = body();
-      b3.appendChild(el("div","res bad", "쫄았네 🐔"));
-      b3.appendChild(el("div","drink", nm(who) + " " + cups + "잔!"));
-      b3.appendChild(nextBtn("다음 도전 →", () => { S.starter = other(who); GAMES.dare(); }));
-      const back = el("button","btn ghost wide", "로비로");
-      back.onclick = openLobby;
-      b3.appendChild(back);
-    };
+    ok.onclick = () => done(true);
+    const no = el("button","btn wide", "🍺 못 하겠다 (" + want + "잔)");
+    no.onclick = () => done(false);
     bb.appendChild(ok); bb.appendChild(no);
   };
-
-  const row = el("div","stack");
-  const easy = el("button","choice", "가볍게\n(실패 1잔)");
-  easy.onclick = () => run(1);
-  const hard = el("button","choice", "🔥 세게\n(스킨십 포함 · 실패 2잔)");
-  hard.style.borderColor = "var(--blush)";
-  hard.onclick = () => run(2);
-  row.appendChild(easy); row.appendChild(hard);
-  b.appendChild(row);
-  b.appendChild(el("div","hint center", nm(S.starter) + "부터 시작합니다"));
 };
 
 
