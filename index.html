@@ -205,6 +205,13 @@ input{font:inherit}
 .tally-bump{animation:tallypop .4s ease}
 @keyframes tallypop{0%{transform:scale(1)}40%{transform:scale(1.28)}100%{transform:scale(1)}}
 
+/* 폭탄 심지 — 남은 시간을 숨기고 긴장만 준다 */
+.fuse{font-size:56px;line-height:1;animation:fusewiggle .7s ease-in-out infinite}
+@keyframes fusewiggle{
+  0%,100%{transform:rotate(-7deg) scale(1)}
+  50%{transform:rotate(7deg) scale(1.09)}
+}
+
 /* 쫄? 난이도 룰렛 */
 .slot{
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
@@ -1498,6 +1505,76 @@ const CONTENT = {
     {text:"상대에게 오늘 이후 바라는 관계를 말하기", dare:3},
     {text:"상대의 눈을 보며 진심으로 고백하기", dare:3},
   ],
+
+  /* 11. 폭탄 돌리기 — 랜덤 타이머가 도는 동안 주제에 맞는 답을 번갈아 말한다.
+     터질 때 들고 있던 사람이 마신다. (핵불닭 전용) */
+  bomb: [
+    {q:"이성에게 반하는 순간"},
+    {q:"연애할 때 절대 못 참는 것"},
+    {q:"술 마시고 한 실수"},
+    {q:"헤어지자는 말을 듣는 이유"},
+    {q:"첫 데이트 장소로 별로인 곳"},
+    {q:"이성에게 하면 안 되는 질문"},
+    {q:"애인 몰래 하면 큰일 나는 것"},
+    {q:"연애 초기에만 하는 행동"},
+    {q:"소개팅에서 바로 정 떨어지는 순간"},
+    {q:"전 애인이 생각나는 순간"},
+    {q:"이성의 매력 포인트"},
+    {q:"연락 안 될 때 드는 생각"},
+    {q:"술자리에서 하면 안 되는 행동"},
+    {q:"애인에게 듣고 싶은 말"},
+    {q:"이별 후에 하는 행동"},
+    {q:"바람의 신호라고 생각되는 것"},
+    {q:"연애하면서 포기하게 되는 것"},
+    {q:"이성에게 실망하는 순간"},
+    {q:"썸일 때만 하는 행동"},
+    {q:"결혼 상대에게 필요한 조건"},
+    {q:"연애 중 거짓말하는 이유"},
+    {q:"이성 친구와 선 넘는 행동"},
+    {q:"술김에 하는 후회할 행동"},
+    {q:"애인의 SNS에서 신경 쓰이는 것"},
+    {q:"연애가 식었다는 신호"},
+    {q:"이성에게 들키기 싫은 것"},
+    {q:"데이트 비용으로 싸우는 이유"},
+    {q:"연애할 때 숨기는 것"},
+    {q:"이성의 집에 갔을 때 보는 것"},
+    {q:"헤어진 뒤 후회하는 것"},
+  ],
+
+  /* 12. 진실의 눈 — 답하는 사람은 진실/거짓을 정해서 말하고,
+     상대가 표정과 말투로 판정한다. (핵불닭 전용) */
+  lie: [
+    {q:"첫 경험은 언제, 어디서였어?"},
+    {q:"지금까지 만난 사람은 몇 명이야?"},
+    {q:"전 애인과 헤어진 진짜 이유는?"},
+    {q:"최근에 야한 상상을 한 게 언제야?"},
+    {q:"지금 마음에 둔 사람이 있어?"},
+    {q:"바람 피울 뻔한 적 있어?"},
+    {q:"나를 이성으로 생각해본 적 있어?"},
+    {q:"원나잇 해본 적 있어?"},
+    {q:"애인 몰래 다른 사람과 연락한 적 있어?"},
+    {q:"친구의 애인을 좋아한 적 있어?"},
+    {q:"가장 최근에 한 거짓말은 뭐야?"},
+    {q:"통장에 지금 얼마 있어?"},
+    {q:"내 험담을 한 적 있어?"},
+    {q:"전 애인과 헤어지고 다시 잔 적 있어?"},
+    {q:"지금 나에게 숨기는 게 있어?"},
+    {q:"연애 경험을 부풀려 말한 적 있어?"},
+    {q:"오늘 이 자리에 오기 싫었던 순간이 있었어?"},
+    {q:"내가 없는 자리에서 내 얘기를 한 적 있어?"},
+    {q:"두 사람을 동시에 만난 적 있어?"},
+    {q:"첫사랑을 아직 잊지 못했어?"},
+    {q:"내 SNS를 몰래 본 적 있어?"},
+    {q:"돈 때문에 사람을 만난 적 있어?"},
+    {q:"지금 애인이나 썸이 있어?"},
+    {q:"몸이 목적인 만남을 해본 적 있어?"},
+    {q:"오늘 대답 중에 거짓말이 있었어?"},
+    {q:"나보다 더 친한 사람이 있어?"},
+    {q:"술 마시고 이성에게 연락한 적 있어?"},
+    {q:"내 외모를 평가해본 적 있어?"},
+    {q:"이 게임이 불편한 순간이 있었어?"},
+    {q:"지금 이 순간 하고 싶은 말이 따로 있어?"},
+  ],
 };
 
 /* =====================================================================
@@ -1515,6 +1592,8 @@ const MODES = [
   {id:"roulette", ic:"🔫", nm:"러시안 룰렛",  ds:"운에 맡긴다",            tier:"C", lv:false, hide:3},
   // only:3 → 핵불닭에서만 로비에 나타난다
   {id:"dare",     ic:"🔥", nm:"쫄?",         ds:"못 하겠으면 마셔",        tier:"C", lv:false, only:3},
+  {id:"bomb",     ic:"💣", nm:"폭탄 돌리기", ds:"터지면 마신다",           tier:"C", lv:false, only:3},
+  {id:"lie",      ic:"👁️", nm:"진실의 눈",   ds:"거짓말을 잡아내라",       tier:"C", lv:false, only:3},
 ];
 const TIER_NAME = {A:"대화가 터지는", B:"분위기 전환", C:"길게 가는"};
 const PIN_CODE = "1024";
@@ -1567,7 +1646,11 @@ function draw(modeId, pool){
 }
 
 let timerId = null;
+// 폭탄 돌리기는 body()의 stopTimer()에 꺼지면 안 되므로 전용 타이머를 쓴다.
+// 모드를 벗어날 때 이 정리 함수를 반드시 호출한다.
+let bombCleanup = null;
 function stopTimer(){ if(timerId){ clearInterval(timerId); timerId = null; } }
+function stopAllTimers(){ stopTimer(); if(bombCleanup){ bombCleanup(); bombCleanup = null; } }
 // tick(남은초) 매초 호출, 0이 되면 done()
 function startTimer(sec, tick, done){
   stopTimer();
@@ -1681,6 +1764,7 @@ function renderMissions(){
 }
 
 function openLobby(){
+  stopAllTimers();
   show("lobbyView");
   renderMissions();
 }
@@ -1761,6 +1845,7 @@ function syncSeg(){
 const GAMES = {};
 
 function openGame(id){
+  stopAllTimers();          // 이전 모드의 폭탄 심지까지 확실히 끈다
   const m = MODES.find(x => x.id === id);
   $("#gameTitle").textContent = m.nm;
   S.starter = other(S.starter);         // 모드 들어갈 때마다 선공 교대
@@ -1773,7 +1858,7 @@ function nextBtn(label, fn){ const b = el("button","btn primary wide", label || 
 
 function initGame(){
   $("#exitBtn").onclick = () => {
-    if(confirm("로비로 나갈까요?")){ stopTimer(); $("#pass").classList.add("hide"); openLobby(); }
+    if(confirm("로비로 나갈까요?")){ stopAllTimers(); $("#pass").classList.add("hide"); openLobby(); }
   };
 }
 
@@ -2265,6 +2350,124 @@ GAMES.dare = function(){
     no.onclick = () => done(false);
     bb.appendChild(ok); bb.appendChild(no);
   };
+};
+
+/* ---------------------------------------------------------------------
+   11. 폭탄 돌리기 — 랜덤 시간(20~60초) 뒤 터진다. 남은 시간은 숨긴다.
+   주제에 맞는 답을 번갈아 말하고, 터질 때 차례인 사람이 마신다.
+   --------------------------------------------------------------------- */
+GAMES.bomb = function(){
+  const q = draw("bomb", CONTENT.bomb);
+  let turn = S.starter, count = 0;
+  /* body()가 stopTimer()를 부르므로 공용 타이머를 쓰면 화면을 그릴 때마다
+     심지가 꺼진다. 폭탄은 전용 타이머로 돌린다. */
+  let fuseId = null;
+  const clearFuse = () => { if(fuseId){ clearInterval(fuseId); fuseId = null; } };
+  bombCleanup = clearFuse;    // 모드를 벗어날 때 정리 (openGame/exit에서 호출)
+
+  const boom = () => {
+    clearFuse();
+    const bb = body();
+    bb.appendChild(el("div","res bad", "💥 터졌다!"));
+    bb.appendChild(el("div","hint center", count + "개까지 이어졌습니다"));
+    bb.appendChild(drink(turn, 1, nm(turn) + " 한 잔!"));
+    bb.appendChild(nextBtn("다시 →", () => { S.starter = other(S.starter); GAMES.bomb(); }));
+    const back = el("button","btn ghost wide", "로비로");
+    back.onclick = openLobby;
+    bb.appendChild(back);
+  };
+
+  const round = () => {
+    const bb = body();
+    bb.appendChild(el("div","turn", nm(turn) + " 차례 · " + count + "번째"));
+    const card = el("div","card center");
+    card.appendChild(el("div","label", "이 주제로 하나씩"));
+    card.appendChild(el("div","qtext", fill(q.q)));
+    bb.appendChild(card);
+    // 남은 시간을 숨긴다 — 심지가 타들어가는 것만 보여준다
+    bb.appendChild(el("div","fuse center", "🧨"));
+    bb.appendChild(el("div","hint center", "말했으면 바로 넘기세요"));
+    const pass = el("button","btn primary wide", "말했다 → 넘기기");
+    pass.onclick = () => { count++; turn = other(turn); round(); };
+    bb.appendChild(pass);
+  };
+
+  const b = body();
+  b.appendChild(el("div","card center", "").appendChild(el("div","qtext","폭탄 돌리기")).parentElement);
+  b.appendChild(el("div","hint center", "주제에 맞는 답을 번갈아 하나씩.\n언제 터질지는 아무도 모릅니다"));
+  b.appendChild(nextBtn(nm(turn) + "부터 시작", () => {
+    round();
+    // 20~60초 사이 랜덤. 남은 시간은 화면에 보여주지 않는다.
+    let left = 20 + Math.floor(Math.random() * 41);
+    clearFuse();
+    fuseId = setInterval(() => { if(--left <= 0) boom(); }, 1000);
+  }));
+};
+
+/* ---------------------------------------------------------------------
+   12. 진실의 눈 — 답하는 사람이 진실/거짓을 정해 말하고,
+   상대가 표정과 말투로 판정한다. 맞히면 답한 쪽이, 틀리면 판정한 쪽이 마신다.
+   --------------------------------------------------------------------- */
+GAMES.lie = function(){
+  const q = draw("lie", CONTENT.lie);
+  const teller = S.starter, judge = other(S.starter);
+  let truth = null;
+
+  const setMode = () => {
+    const bb = body();
+    bb.appendChild(el("div","turn", nm(teller) + "만 보세요"));
+    const card = el("div","card center");
+    card.appendChild(el("div","label", "이 질문에 어떻게 답할까?"));
+    card.appendChild(el("div","qtext", fill(q.q)));
+    bb.appendChild(card);
+    bb.appendChild(el("div","hint center", "고른 대로 연기하세요. 상대는 모릅니다"));
+    const row = el("div","stack");
+    [["😇 진실로 답한다", true], ["😈 거짓으로 답한다", false]].forEach(([lb, v]) => {
+      const c = el("button","choice", lb);
+      c.onclick = () => { truth = v; passPhone(judge, ask, nm(teller) + "의 선택이 가려졌습니다"); };
+      row.appendChild(c);
+    });
+    bb.appendChild(row);
+  };
+
+  const ask = () => {
+    const bb = body();
+    bb.appendChild(el("div","turn", nm(teller) + "가 답할 차례"));
+    const card = el("div","card center");
+    card.appendChild(el("div","qtext", fill(q.q)));
+    bb.appendChild(card);
+    bb.appendChild(el("div","hint center",
+      nm(teller) + "가 대답하면 " + nm(judge) + "가 판정합니다.\n캐물어도 됩니다"));
+    const row = el("div","stack");
+    [["😇 진실 같다", true], ["😈 거짓말 같다", false]].forEach(([lb, v]) => {
+      const c = el("button","choice", lb);
+      c.onclick = () => result(v);
+      row.appendChild(c);
+    });
+    bb.appendChild(row);
+  };
+
+  const result = (guess) => {
+    const bb = body();
+    const hit = (guess === truth);
+    bb.appendChild(el("div","res " + (hit ? "good" : "bad"), hit ? "간파했다! 👁️" : "속았다!"));
+    const r = el("div","revealbox");
+    r.appendChild(el("div","who", nm(teller) + "의 답은"));
+    r.appendChild(el("div","val", truth ? "😇 진실" : "😈 거짓"));
+    bb.appendChild(r);
+    bb.appendChild(drink(hit ? teller : judge, 1,
+      hit ? nm(teller) + " 한 잔! (읽혔네요)" : nm(judge) + " 한 잔! (속았네요)"));
+    bb.appendChild(nextBtn("다음 →", () => { S.starter = other(S.starter); GAMES.lie(); }));
+    const back = el("button","btn ghost wide", "로비로");
+    back.onclick = openLobby;
+    bb.appendChild(back);
+  };
+
+  const b = body();
+  b.appendChild(el("div","card center", "").appendChild(el("div","qtext","진실의 눈")).parentElement);
+  b.appendChild(el("div","hint center",
+    nm(teller) + "가 진실 또는 거짓으로 답하고,\n" + nm(judge) + "가 표정을 읽어 판정합니다"));
+  b.appendChild(nextBtn(nm(teller) + " 시작", setMode));
 };
 
 
