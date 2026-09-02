@@ -173,6 +173,10 @@ input{font:inherit}
 }
 .choice:active{transform:scale(.98)}
 .choice.pick{border-color:var(--acc);background:rgba(127,191,106,.13)}
+.choice{white-space:pre-line}
+/* 핵불닭 전용 모드 */
+.mode.only{border-color:rgba(226,100,122,.45);background:rgba(226,100,122,.07)}
+.mode.only .nm{color:var(--blush)}
 .res{font-family:var(--disp);font-size:38px;font-weight:700;line-height:1.3;text-wrap:balance}
 .res.good{color:var(--acc)} .res.bad{color:var(--blush)}
 .drink{
@@ -1106,99 +1110,63 @@ const CONTENT = {
     {text:"오늘 상대에게 느낀 감정을 매번 말한다", level:3},
     {text:"상대를 세상에서 제일 소중한 사람처럼 대한다", level:3},
     {text:"자기 연애사를 하나씩 꺼내며 말한다", level:3},
-    // ── 매운맛 추가 (+30)
-    {text:"상대의 말에 항상 '정말?'이라고 되묻는다", level:2},
-    {text:"자기 얘기를 할 때 항상 한 가지를 숨긴다", level:2},
-    {text:"상대를 볼 때마다 한숨을 쉰다", level:2},
-    {text:"모든 문장을 '내 생각엔'으로 시작한다", level:2},
-    {text:"상대의 나이를 계속 언급한다", level:2},
-    {text:"웃을 때 손으로 입을 가려야 한다", level:2},
-    {text:"상대가 질문하면 반드시 되물은 뒤 답한다", level:2},
-    {text:"자기 결점을 하나씩 말하며 대화한다", level:2},
-    {text:"상대의 이름을 틀리게 부른다", level:2},
-    {text:"모든 대답 앞에 '음, 글쎄'를 붙인다", level:2},
-    {text:"상대가 마실 때마다 시선을 피한다", level:2},
-    {text:"자기 자랑을 하면 두 잔", level:2},
-    {text:"상대 말에 항상 한 박자 늦게 반응한다", level:2},
-    {text:"모든 문장에 '솔직히'를 넣는다", level:2},
-    {text:"상대를 세 번째 인칭으로 부른다", level:2},
-    {text:"질문에 절대 '응'이나 '아니'로만 답할 수 없다", level:2},
-    {text:"상대의 표정을 계속 따라 한다", level:2},
-    {text:"말할 때마다 잔을 한 번 든다", level:2},
-    {text:"자기 과거 이야기를 꺼내면 한 잔", level:2},
-    {text:"상대에게 항상 존댓말로 반박한다", level:2},
-    {text:"모든 대답을 '왜냐하면'으로 이어간다", level:2},
-    {text:"상대의 옷차림을 계속 언급한다", level:2},
-    {text:"웃음소리를 크게 내야 한다", level:2},
-    {text:"상대가 말할 때 고개를 절대 끄덕이지 않는다", level:2},
-    {text:"자기 이야기 끝에 항상 '됐고'를 붙인다", level:2},
-    {text:"상대를 칭찬할 때마다 한 잔 마신다", level:2},
-    {text:"모든 문장을 의문형으로 끝낸다", level:2},
-    {text:"상대의 말을 절대 끊을 수 없다 (끊으면 두 잔)", level:2},
-    {text:"자기 감정을 매번 한 단어로 표현한다", level:2},
-    {text:"상대와 눈이 마주치면 먼저 피해야 한다", level:2},
+  ],
+  /* 9. 쫄? — 핵불닭에서만 열리는 도전 모드.
+     dare 1 = 가벼움(못 하면 1잔), dare 2 = 센 것/스킨십(못 하면 2잔) */
+  dare: [
+    // ── 가벼운 도전 (실패 시 1잔)
+    {text:"상대의 눈을 10초간 말없이 바라보기", dare:1},
+    {text:"상대에게 진심 어린 칭찬 세 가지 말하기", dare:1},
+    {text:"오늘 상대에게 느낀 감정을 한 문장으로 말하기", dare:1},
+    {text:"상대의 첫인상을 솔직하게 말하기", dare:1},
+    {text:"휴대폰 최근 통화목록 3개 보여주기", dare:1},
+    {text:"갤러리에서 최근 사진 한 장 보여주기", dare:1},
+    {text:"상대에게 어울리는 이성 타입 말해주기", dare:1},
+    {text:"상대의 매력 포인트 두 개 짚어주기", dare:1},
+    {text:"지금 머릿속에 떠오른 사람 이름 말하기", dare:1},
+    {text:"상대에게 하고 싶었던 말 한마디 하기", dare:1},
+    {text:"내 최애 노래를 한 소절 부르기", dare:1},
+    {text:"상대를 애칭으로 세 번 부르기", dare:1},
+    {text:"오늘 이 자리 점수를 매기고 이유 말하기", dare:1},
+    {text:"상대에게 고마웠던 일 하나 말하기", dare:1},
+    {text:"내 흑역사 하나 공개하기", dare:1},
+    {text:"상대의 장점만 30초 동안 말하기", dare:1},
+    {text:"카톡 프로필 사진 바꾼 이유 설명하기", dare:1},
+    {text:"상대에게 서운했던 일 하나 말하기", dare:1},
+    {text:"내 검색기록 최근 한 줄 말하기", dare:1},
+    {text:"상대를 한 단어로 표현하고 이유 말하기", dare:1},
+    {text:"지금 기분을 표정으로만 표현하기", dare:1},
+    {text:"상대의 이상형을 맞혀보기 (틀리면 실패)", dare:1},
+    {text:"내가 상대에게 바라는 점 하나 말하기", dare:1},
+    {text:"오늘 가장 후회되는 대답 하나 고르기", dare:1},
+    {text:"상대에게 존댓말로 고백하듯 한마디 하기", dare:1},
 
-    // ── 핵불닭 추가 (+60)
-    {text:"상대를 '내 사람'이라고 부른다", level:3},
-    {text:"모든 대답을 '너를 위해서'로 시작한다", level:3},
-    {text:"상대의 눈을 보며 5초 있다가 말한다", level:3},
-    {text:"질문에 무조건 진실만 말해야 한다", level:3},
-    {text:"상대에게 매번 한 가지씩 고백한다", level:3},
-    {text:"상대의 손을 잡지 않으면 말할 수 없다", level:3},
-    {text:"모든 문장에 상대 이름을 넣는다", level:3},
-    {text:"상대를 세상에서 제일 좋아하는 사람처럼 말한다", level:3},
-    {text:"자기 연애 경험을 하나씩 꺼낸다", level:3},
-    {text:"상대의 제안을 한 번은 받아들여야 한다", level:3},
-    {text:"매번 '너만 알고 있어'로 시작한다", level:3},
-    {text:"상대에게 진심 어린 칭찬만 해야 한다", level:3},
-    {text:"자기 흑역사를 하나씩 공개한다", level:3},
-    {text:"상대가 마실 때마다 손을 잡아준다", level:3},
-    {text:"모든 대답 끝에 '너는?'을 붙인다", level:3},
-    {text:"상대를 애인처럼 대한다", level:3},
-    {text:"자기 약점을 매번 하나씩 말한다", level:3},
-    {text:"상대의 질문을 절대 피할 수 없다", level:3},
-    {text:"매 라운드 상대에게 고백 한마디를 한다", level:3},
-    {text:"상대와 거리를 한 뼘 이내로 유지한다", level:3},
-    {text:"모든 문장을 '사실 나는'으로 시작한다", level:3},
-    {text:"상대를 볼 때마다 미소 지어야 한다", level:3},
-    {text:"자기 비밀을 라운드마다 하나씩 푼다", level:3},
-    {text:"상대의 말에 무조건 감동한 척한다", level:3},
-    {text:"매번 상대의 좋은 점을 새로 찾아 말한다", level:3},
-    {text:"상대가 시키면 무조건 한 잔 마신다", level:3},
-    {text:"자기 감정을 숨기면 두 잔", level:3},
-    {text:"상대에게 존댓말로 애정 표현을 한다", level:3},
-    {text:"모든 대답에 '너 때문에'를 넣는다", level:3},
-    {text:"상대의 이야기에 매번 리액션을 크게 한다", level:3},
-    {text:"자기 이상형을 계속 설명해야 한다", level:3},
-    {text:"상대를 오래된 연인처럼 대한다", level:3},
-    {text:"매번 오늘 느낀 감정을 말한다", level:3},
-    {text:"상대의 눈을 보지 않으면 한 잔", level:3},
-    {text:"자기 연애 실패담을 하나씩 말한다", level:3},
-    {text:"상대에게 '고맙다'를 매 라운드 말한다", level:3},
-    {text:"모든 문장을 '우리'로 시작한다", level:3},
-    {text:"상대의 손을 잡고 대답한다", level:3},
-    {text:"자기 진심을 매번 한 줄씩 말한다", level:3},
-    {text:"상대가 웃으면 한 잔 마신다", level:3},
-    {text:"매번 상대에게 질문 하나를 되돌려준다", level:3},
-    {text:"상대를 칭찬하되 매번 다른 표현을 쓴다", level:3},
-    {text:"자기 부끄러운 습관을 하나씩 공개한다", level:3},
-    {text:"상대에게 반말로 애정 표현을 한다", level:3},
-    {text:"모든 대답을 '너라면 어때?'로 끝낸다", level:3},
-    {text:"상대와 시선을 계속 맞춰야 한다", level:3},
-    {text:"자기 첫사랑 이야기를 조금씩 푼다", level:3},
-    {text:"상대의 말에 절대 반박할 수 없다", level:3},
-    {text:"매번 상대의 매력을 하나씩 말한다", level:3},
-    {text:"상대가 부르면 무조건 대답해야 한다", level:3},
-    {text:"자기 후회를 하나씩 꺼낸다", level:3},
-    {text:"상대에게 오늘 하고 싶었던 말을 계속 한다", level:3},
-    {text:"모든 문장에 감정 단어를 하나 넣는다", level:3},
-    {text:"상대를 웃기지 못하면 한 잔", level:3},
-    {text:"자기 비밀번호 힌트를 말해야 한다", level:3},
-    {text:"상대의 눈을 보며 이름을 부른다", level:3},
-    {text:"매번 상대에게 한 가지를 부탁한다", level:3},
-    {text:"자기 속마음을 라운드마다 하나씩 말한다", level:3},
-    {text:"상대가 원하면 무엇이든 대답해야 한다", level:3},
-    {text:"오늘 이 자리에 대한 솔직한 감상을 매번 말한다", level:3},
+    // ── 센 도전 · 스킨십 포함 (실패 시 2잔)
+    {text:"상대와 손을 잡고 30초 유지하기", dare:2},
+    {text:"상대의 손금을 봐주며 손을 잡기", dare:2},
+    {text:"상대에게 어깨동무하고 셀카 찍기", dare:2},
+    {text:"상대의 머리를 3초간 쓰다듬기", dare:2},
+    {text:"상대와 새끼손가락 걸고 약속하기", dare:2},
+    {text:"상대의 어깨를 30초간 주물러주기", dare:2},
+    {text:"상대와 팔짱 끼고 한 바퀴 돌기", dare:2},
+    {text:"상대의 손등에 하이파이브 대신 손 포개기", dare:2},
+    {text:"상대를 3초간 안아주기", dare:2},
+    {text:"상대의 볼을 살짝 꼬집기", dare:2},
+    {text:"상대와 이마를 맞대고 5초 있기", dare:2},
+    {text:"상대의 손을 잡고 진심 한마디 말하기", dare:2},
+    {text:"상대에게 무릎베개 10초 해주기", dare:2},
+    {text:"상대의 등을 토닥이며 위로 한마디", dare:2},
+    {text:"상대와 손깍지 끼고 10초 유지하기", dare:2},
+    {text:"상대의 눈을 보며 '좋아해'라고 말하기", dare:2},
+    {text:"상대에게 백허그 5초 하기", dare:2},
+    {text:"상대의 손을 잡고 눈 감고 10초 있기", dare:2},
+    {text:"상대와 볼을 맞대고 셀카 찍기", dare:2},
+    {text:"상대의 손을 잡고 좋아하는 점 말하기", dare:2},
+    {text:"상대에게 기대어 10초 있기", dare:2},
+    {text:"상대의 손을 두 손으로 감싸고 고백하기", dare:2},
+    {text:"상대와 마주 앉아 눈만 보며 30초 버티기", dare:2},
+    {text:"상대의 이름을 귓속말로 부르기", dare:2},
+    {text:"상대에게 오늘 가장 하고 싶었던 스킨십 하기", dare:2},
   ],
   // 10. 스토리 딜레마 — 각 노드는 선택지 2개, next로 이어짐
   story: [
@@ -1332,6 +1300,8 @@ const MODES = [
   {id:"telepathy",ic:"🔮", nm:"텔레파시",     ds:"같은 답이면 세이프",      tier:"B", lv:false},
   {id:"mission",  ic:"🎯", nm:"미션 카드",    ds:"어길 때마다 한 잔",       tier:"C", lv:true},
   {id:"roulette", ic:"🔫", nm:"러시안 룰렛",  ds:"운에 맡긴다",            tier:"C", lv:false},
+  // only:3 → 핵불닭에서만 로비에 나타난다
+  {id:"dare",     ic:"🔥", nm:"쫄?",         ds:"못 하겠으면 마셔",        tier:"C", lv:false, only:3},
   {id:"story",    ic:"📖", nm:"스토리 딜레마", ds:"선택이 결말을 바꾼다",   tier:"C", lv:true},
 ];
 const TIER_NAME = {A:"대화가 터지는", B:"분위기 전환", C:"길게 가는"};
@@ -1487,20 +1457,32 @@ function initLobby(){
       store.set("level", String(S.level));
       S.used = {};   // 수위가 바뀌면 뽑기 풀도 초기화
       syncSeg();
+      renderModes(); // 핵불닭 전용 모드가 나타나거나 사라진다
     };
   });
   syncSeg();
 
   $("#lockBtn").onclick = () => { store.del(UNLOCK_KEY); pinBuf=""; drawDots(); $("#pinMsg").textContent="비밀번호 4자리를 입력하세요"; show("pinView"); };
-  $("#randomBtn").onclick = () => openGame(MODES[Math.floor(Math.random()*MODES.length)].id);
+  $("#randomBtn").onclick = () => { const v = visibleModes(); openGame(v[Math.floor(Math.random()*v.length)].id); };
 
+  renderModes();
+}
+
+// 현재 수위에서 열리는 모드만 (only가 있으면 그 수위에서만 나타난다)
+function visibleModes(){
+  return MODES.filter(m => m.only == null || m.only === S.level);
+}
+function renderModes(){
   const list = $("#modeList");
   list.innerHTML = "";
   ["A","B","C"].forEach(t => {
+    const ms = visibleModes().filter(m => m.tier === t);
+    if(!ms.length) return;
     list.appendChild(el("div","tier", TIER_NAME[t]));
     const g = el("div","grid");
-    MODES.filter(m => m.tier === t).forEach(m => {
+    ms.forEach(m => {
       const c = el("button","mode");
+      if(m.only) c.classList.add("only");
       c.appendChild(el("div","ic", m.ic));
       c.appendChild(el("div","nm", m.nm));
       c.appendChild(el("div","ds", m.ds));
@@ -1919,6 +1901,68 @@ GAMES.roulette = function(){
   b.appendChild(grid);
   const status = el("div","turn", nm(turn) + " 차례");
   b.appendChild(status);
+};
+
+/* ---------------------------------------------------------------------
+   9. 쫄? — 핵불닭 전용 도전 모드.
+   dare 1 = 가벼움(실패 시 1잔), dare 2 = 스킨십 포함(실패 시 2잔)
+   --------------------------------------------------------------------- */
+GAMES.dare = function(){
+  const b = body();
+  b.appendChild(el("div","card center", "").appendChild(el("div","qtext","쫄?")).parentElement);
+  b.appendChild(el("div","hint center", "도전을 받고 해내거나, 못 하겠으면 마신다.\n난이도가 높을수록 벌주도 크다"));
+
+  const pick = (want) => {
+    // dare 값이 want인 것들 중에서 중복 없이 뽑는다
+    const pool = CONTENT.dare.filter(d => d.dare === want);
+    const key = "dare" + want;
+    if(!S.used[key] || !S.used[key].length) S.used[key] = shuffle(pool.map((_,i)=>i));
+    return pool[S.used[key].pop()];
+  };
+
+  const run = (want) => {
+    const q = pick(want);
+    const who = S.starter;
+    const cups = want === 2 ? 2 : 1;
+    const bb = body();
+    bb.appendChild(el("div","turn", nm(who) + "의 도전"));
+    const card = el("div","card center");
+    card.appendChild(el("div","label", want === 2 ? "🔥 센 도전 · 실패하면 2잔" : "실패하면 1잔"));
+    card.appendChild(el("div","qtext", fill(q.text)));
+    bb.appendChild(card);
+
+    const ok = el("button","btn ok wide", "✅ 해냈다");
+    ok.onclick = () => {
+      const b3 = body();
+      b3.appendChild(el("div","res good", "성공! 😎"));
+      b3.appendChild(el("div","hint center", nm(other(who)) + " 차례로 넘어갑니다"));
+      b3.appendChild(nextBtn("다음 도전 →", () => { S.starter = other(who); GAMES.dare(); }));
+      const back = el("button","btn ghost wide", "로비로");
+      back.onclick = openLobby;
+      b3.appendChild(back);
+    };
+    const no = el("button","btn wide", "🍺 못 하겠다 (" + cups + "잔)");
+    no.onclick = () => {
+      const b3 = body();
+      b3.appendChild(el("div","res bad", "쫄았네 🐔"));
+      b3.appendChild(el("div","drink", nm(who) + " " + cups + "잔!"));
+      b3.appendChild(nextBtn("다음 도전 →", () => { S.starter = other(who); GAMES.dare(); }));
+      const back = el("button","btn ghost wide", "로비로");
+      back.onclick = openLobby;
+      b3.appendChild(back);
+    };
+    bb.appendChild(ok); bb.appendChild(no);
+  };
+
+  const row = el("div","stack");
+  const easy = el("button","choice", "가볍게\n(실패 1잔)");
+  easy.onclick = () => run(1);
+  const hard = el("button","choice", "🔥 세게\n(스킨십 포함 · 실패 2잔)");
+  hard.style.borderColor = "var(--blush)";
+  hard.onclick = () => run(2);
+  row.appendChild(easy); row.appendChild(hard);
+  b.appendChild(row);
+  b.appendChild(el("div","hint center", nm(S.starter) + "부터 시작합니다"));
 };
 
 /* ---------------------------------------------------------------------
