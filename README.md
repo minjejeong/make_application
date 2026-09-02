@@ -28,7 +28,15 @@ git push -u origin main
 https://<아이디>.github.io/<저장소이름>/
 ```
 
-폰에서 열고 → 공유 → **홈 화면에 추가** 하면 앱처럼 씁니다.
+## 폰에 앱으로 설치하기
+
+이 게임은 PWA라서 홈 화면에 추가하면 앱처럼 동작합니다. 설치 후에는 **인터넷 없이도** 실행됩니다.
+
+- **아이폰(Safari)** — 사이트 열기 → 하단 공유 버튼 → **홈 화면에 추가**
+- **안드로이드(Chrome)** — 사이트 열기 → 우상단 ⋮ → **앱 설치** (또는 홈 화면에 추가)
+
+아이콘이 생기고, 주소창 없이 전체화면으로 뜹니다.
+처음 한 번만 인터넷에 연결된 상태로 열면, 그다음부터는 술집에 와이파이가 없어도 됩니다.
 
 ## 비밀번호
 
@@ -60,15 +68,22 @@ const CONTENT = {
 };
 ```
 
-고친 뒤:
+고친 뒤, **`sw.js`의 캐시 버전도 함께 올리세요.** 안 올리면 이미 설치된 폰에서는
+캐시된 옛 버전이 계속 뜹니다.
+
+```js
+const CACHE = "doori-v1";   // → "doori-v2" 로 변경
+```
+
+그다음:
 
 ```bash
-git add index.html
+git add index.html sw.js
 git commit -m "문항 추가"
 git push
 ```
 
-1분쯤 뒤 사이트에 반영됩니다.
+1분쯤 뒤 사이트에 반영되고, 앱을 다시 열면 갱신됩니다.
 
 ## 게임 모드
 
@@ -81,6 +96,9 @@ git push
 의존성 없는 단일 HTML 파일입니다. 빌드 과정이 없습니다.
 
 - `index.html` — 게임 전체 (HTML + CSS + JS + 문항)
+- `manifest.json` — 앱 이름·아이콘·전체화면 설정 (PWA)
+- `sw.js` — 오프라인 캐시. **내용을 고치면 `CACHE` 버전을 올려야** 갱신이 반영됩니다
+- `icon-192.png` / `icon-512.png` / `apple-touch-icon.png` — 홈 화면 아이콘
 - `.nojekyll` — GitHub Pages의 Jekyll 처리를 건너뜁니다
 - `artifact.html` — claude.ai Artifact 게시용 사본 (`.gitignore`에 포함, 배포에는 불필요)
 

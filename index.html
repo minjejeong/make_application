@@ -6,6 +6,11 @@
 <meta name="theme-color" content="#14161B">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="둘이서">
+<meta name="description" content="둘이서 폰 하나로 하는 오프라인 술자리 게임">
+<link rel="manifest" href="./manifest.json">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
 <title>둘이서 한잔</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1103,6 +1108,14 @@ initPin();
 initLobby();
 initGame();
 if(store.get("unlocked") === "1") openLobby(); else show("pinView");
+
+/* 오프라인 지원: 서비스 워커 등록.
+   file:// 로 직접 열었거나 미지원 브라우저면 조용히 건너뛴다 (게임은 그대로 동작). */
+if("serviceWorker" in navigator && location.protocol.startsWith("http")){
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
+  });
+}
 </script>
 </body>
 </html>
