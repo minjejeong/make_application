@@ -174,7 +174,7 @@ input{font:inherit}
 .choice:active{transform:scale(.98)}
 .choice.pick{border-color:var(--acc);background:rgba(127,191,106,.13)}
 .choice{white-space:pre-line}
-/* 핵불닭 전용 모드 */
+/* 강조 모드 (accent:true) — 지금은 쫄?만 */
 .mode.only{border-color:rgba(226,100,122,.45);background:rgba(226,100,122,.07)}
 .mode.only .nm{color:var(--blush)}
 
@@ -1591,7 +1591,7 @@ const MODES = [
   {id:"mission",  ic:"🎯", nm:"미션 카드",    ds:"어길 때마다 한 잔",       tier:"C", lv:true},
   {id:"roulette", ic:"🔫", nm:"러시안 룰렛",  ds:"운에 맡긴다",            tier:"C", lv:false, hide:3},
   // only:3 → 핵불닭에서만 로비에 나타난다
-  {id:"dare",     ic:"🔥", nm:"쫄?",         ds:"못 하겠으면 마셔",        tier:"C", lv:false, only:3},
+  {id:"dare",     ic:"🔥", nm:"쫄?",         ds:"못 하겠으면 마셔",        tier:"C", lv:false, only:3, accent:true},
   {id:"bomb",     ic:"💣", nm:"폭탄 돌리기", ds:"터지면 마신다",           tier:"C", lv:false, only:3},
   {id:"lie",      ic:"👁️", nm:"진실의 눈",   ds:"거짓말을 잡아내라",       tier:"C", lv:false, only:3},
 ];
@@ -1825,7 +1825,7 @@ function renderModes(){
     const g = el("div","grid");
     ms.forEach(m => {
       const c = el("button","mode");
-      if(m.only) c.classList.add("only");
+      if(m.accent) c.classList.add("only");   // 강조는 only 여부와 별개로 지정
       c.appendChild(el("div","ic", m.ic));
       c.appendChild(el("div","nm", m.nm));
       c.appendChild(el("div","ds", m.ds));
