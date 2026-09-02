@@ -178,6 +178,33 @@ input{font:inherit}
 .mode.only{border-color:rgba(226,100,122,.45);background:rgba(226,100,122,.07)}
 .mode.only .nm{color:var(--blush)}
 
+/* 오늘 마신 잔 수 */
+#tally{
+  display:flex;align-items:stretch;gap:8px;margin-top:auto;padding-top:12px;
+}
+.tally-side{
+  flex:1;display:flex;align-items:center;justify-content:center;gap:10px;
+  background:var(--card);border:1px solid var(--line);border-radius:16px;
+  padding:11px 14px;min-width:0;
+}
+.tally-nm{
+  font-size:13px;font-weight:700;color:var(--dim);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.tally-n{
+  font-family:var(--disp);font-size:27px;font-weight:700;line-height:1;
+  font-variant-numeric:tabular-nums;color:var(--acc2);flex:none;
+}
+.tally-side.lead{border-color:rgba(226,100,122,.45);background:rgba(226,100,122,.09)}
+.tally-side.lead .tally-n{color:var(--blush)}
+.tally-reset{
+  width:40px;border-radius:14px;flex:none;
+  background:var(--card);border:1px solid var(--line);
+  color:var(--dim2);font-size:15px;
+}
+.tally-bump{animation:tallypop .4s ease}
+@keyframes tallypop{0%{transform:scale(1)}40%{transform:scale(1.28)}100%{transform:scale(1)}}
+
 /* 쫄? 난이도 룰렛 */
 .slot{
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
@@ -283,6 +310,19 @@ input{font:inherit}
     </div>
     <div id="missionBar2"></div>
     <div id="gameBody"></div>
+  </div>
+
+  <!-- 오늘 마신 잔 수 -->
+  <div id="tally" class="hide">
+    <div class="tally-side" id="tallyA">
+      <div class="tally-nm"></div>
+      <div class="tally-n">0</div>
+    </div>
+    <button class="tally-reset" id="tallyReset" aria-label="잔 수 초기화">↺</button>
+    <div class="tally-side" id="tallyB">
+      <div class="tally-nm"></div>
+      <div class="tally-n">0</div>
+    </div>
   </div>
 </div>
 
@@ -1468,11 +1508,11 @@ const MODES = [
   {id:"truth",    ic:"💬", nm:"질문 카드",   ds:"솔직하게, 아니면 한 잔",  tier:"A", lv:true},
   {id:"ox",       ic:"🙈", nm:"나에 대한 O/X", ds:"넌 날 얼마나 알아?",     tier:"A", lv:true},
   {id:"whoMore",  ic:"👉", nm:"둘 중 누구?",  ds:"서로를 어떻게 보는지",    tier:"A", lv:true},
-  {id:"threeSec", ic:"⏱️", nm:"3초 룰",      ds:"3초 안에 세 개",         tier:"B", lv:false},
-  {id:"initial",  ic:"🔤", nm:"초성 릴레이",  ds:"막히면 마신다",          tier:"B", lv:false},
-  {id:"telepathy",ic:"🔮", nm:"텔레파시",     ds:"같은 답이면 세이프",      tier:"B", lv:false},
+  {id:"threeSec", ic:"⏱️", nm:"3초 룰",      ds:"3초 안에 세 개",         tier:"B", lv:false, hide:3},
+  {id:"initial",  ic:"🔤", nm:"초성 릴레이",  ds:"막히면 마신다",          tier:"B", lv:false, hide:3},
+  {id:"telepathy",ic:"🔮", nm:"텔레파시",     ds:"같은 답이면 세이프",      tier:"B", lv:false, hide:3},
   {id:"mission",  ic:"🎯", nm:"미션 카드",    ds:"어길 때마다 한 잔",       tier:"C", lv:true},
-  {id:"roulette", ic:"🔫", nm:"러시안 룰렛",  ds:"운에 맡긴다",            tier:"C", lv:false},
+  {id:"roulette", ic:"🔫", nm:"러시안 룰렛",  ds:"운에 맡긴다",            tier:"C", lv:false, hide:3},
   // only:3 → 핵불닭에서만 로비에 나타난다
   {id:"dare",     ic:"🔥", nm:"쫄?",         ds:"못 하겠으면 마셔",        tier:"C", lv:false, only:3},
 ];
@@ -1491,6 +1531,7 @@ const S = {
   used:{},          // modeId -> [남은 인덱스]
   missions:[],      // {text, who}
   starter:"A",      // 라운드 선공 (모드 진입마다 교대)
+  cups:{A:0, B:0},  // 오늘 마신 잔 수
 };
 
 const $  = (s) => document.querySelector(s);
@@ -1542,6 +1583,7 @@ function startTimer(sec, tick, done){
 /* 화면 전환 */
 function show(view){
   ["pinView","lobbyView","gameView"].forEach(v => $("#"+v).classList.toggle("hide", v !== view));
+  $("#tally").classList.toggle("hide", view === "pinView");
 }
 
 /* 폰 넘기기 인터스티셜 */
@@ -1590,6 +1632,37 @@ function pinKey(k){
 /* =====================================================================
    로비
    ===================================================================== */
+/* ---- 오늘 마신 잔 수 ----
+   drink()가 유일한 집계 지점이다. 벌주를 새로 만들면 반드시 여기를 거치게 할 것. */
+function renderTally(bump){
+  const bar = $("#tally");
+  bar.classList.remove("hide");
+  [["A","#tallyA"],["B","#tallyB"]].forEach(([k, sel]) => {
+    const side = $(sel);
+    side.querySelector(".tally-nm").textContent = nm(k);
+    const n = side.querySelector(".tally-n");
+    n.textContent = S.cups[k];
+    // 더 많이 마신 쪽을 강조 (동점이면 둘 다 평범하게)
+    side.classList.toggle("lead", S.cups[k] > S.cups[other(k)]);
+    if(bump === k){
+      n.classList.remove("tally-bump");
+      void n.offsetWidth;          // 애니메이션 재시작
+      n.classList.add("tally-bump");
+    }
+  });
+  store.set("cups", JSON.stringify(S.cups));
+}
+
+/* 벌주 한 번을 기록하고 화면에 문구를 만든다.
+   who: "A" | "B" | "both",  n: 잔 수 */
+function drink(who, n, msg){
+  n = n || 1;
+  if(who === "both"){ S.cups.A += n; S.cups.B += n; }
+  else { S.cups[who] += n; }
+  renderTally(who === "both" ? null : who);
+  return el("div","drink", msg);
+}
+
 function renderMissions(){
   [$("#missionBar"), $("#missionBar2")].forEach(bar => {
     if(!bar) return;
@@ -1617,8 +1690,8 @@ function initLobby(){
   $("#nameB").value = store.get("nameB") || "";
   S.names.A = $("#nameA").value.trim();
   S.names.B = $("#nameB").value.trim();
-  $("#nameA").oninput = e => { S.names.A = e.target.value.trim(); store.set("nameA", e.target.value); renderMissions(); };
-  $("#nameB").oninput = e => { S.names.B = e.target.value.trim(); store.set("nameB", e.target.value); renderMissions(); };
+  $("#nameA").oninput = e => { S.names.A = e.target.value.trim(); store.set("nameA", e.target.value); renderMissions(); renderTally(); };
+  $("#nameB").oninput = e => { S.names.B = e.target.value.trim(); store.set("nameB", e.target.value); renderMissions(); renderTally(); };
 
   const savedLv = parseInt(store.get("level") || "2", 10);
   S.level = [1,2,3].includes(savedLv) ? savedLv : 2;
@@ -1637,12 +1710,26 @@ function initLobby(){
   $("#lockBtn").onclick = () => { store.del(UNLOCK_KEY); pinBuf=""; drawDots(); $("#pinMsg").textContent="비밀번호 4자리를 입력하세요"; show("pinView"); };
   $("#randomBtn").onclick = () => { const v = visibleModes(); openGame(v[Math.floor(Math.random()*v.length)].id); };
 
+  // 잔 수: 지난 세션 값 복원 후 표시
+  try{
+    const saved = JSON.parse(store.get("cups") || "null");
+    if(saved && typeof saved.A === "number" && typeof saved.B === "number") S.cups = saved;
+  }catch(e){}
+  $("#tallyReset").onclick = () => {
+    if(confirm("잔 수를 0으로 되돌릴까요?")){ S.cups = {A:0, B:0}; renderTally(); }
+  };
+  renderTally();
+
   renderModes();
 }
 
-// 현재 수위에서 열리는 모드만 (only가 있으면 그 수위에서만 나타난다)
+/* 현재 수위에서 열리는 모드만.
+   only: 그 수위에서만 나타난다   hide: 그 수위에서만 감춘다 */
 function visibleModes(){
-  return MODES.filter(m => m.only == null || m.only === S.level);
+  return MODES.filter(m =>
+    (m.only == null || m.only === S.level) &&
+    (m.hide == null || m.hide !== S.level)
+  );
 }
 function renderModes(){
   const list = $("#modeList");
@@ -1727,15 +1814,25 @@ GAMES.balance = function(){
       bb.appendChild(r);
     });
     if(same){
-      bb.appendChild(el("div","drink", "통했으니까 기분 좋게 둘 다 한 잔 🥂"));
+      bb.appendChild(drink("both", 1, "통했으니까 기분 좋게 둘 다 한 잔 🥂"));
       bb.appendChild(nextBtn("다음 문제 →", GAMES.balance));
     }else{
-      bb.appendChild(el("div","hint center", "30초 동안 서로를 설득하세요"));
+      bb.appendChild(el("div","hint center", "30초 동안 서로를 설득하세요.\n끝나면 진 사람을 눌러주세요"));
       const t = el("div","timer center", "30");
       bb.appendChild(t);
-      const done = el("button","btn primary wide", "설득 끝 → 진 사람이 한 잔");
-      done.onclick = () => { stopTimer(); GAMES.balance(); };
-      bb.appendChild(done);
+      ["A","B"].forEach(k => {
+        const lose = el("button","btn wide", "🍺 " + nm(k) + " 가 졌다 (한 잔)");
+        lose.onclick = () => {
+          stopTimer();
+          const b3 = body();
+          b3.appendChild(drink(k, 1, nm(k) + " 한 잔!"));
+          b3.appendChild(nextBtn("다음 문제 →", GAMES.balance));
+        };
+        bb.appendChild(lose);
+      });
+      const draw_ = el("button","btn ghost wide", "무승부 (넘어가기)");
+      draw_.onclick = () => { stopTimer(); GAMES.balance(); };
+      bb.appendChild(draw_);
       startTimer(30, (s) => { t.textContent = s; t.classList.toggle("hot", s <= 10); },
                  () => { t.textContent = "끝!"; });
     }
@@ -1765,7 +1862,7 @@ GAMES.truth = function(){
   const pass = el("button","btn wide", "🍺 패스 (한 잔)");
   pass.onclick = () => {
     const bb = body();
-    bb.appendChild(el("div","drink", nm(answerer) + " 한 잔!"));
+    bb.appendChild(drink(answerer, 1, nm(answerer) + " 한 잔!"));
     bb.appendChild(nextBtn("다음 질문 →", () => { S.starter = other(S.starter); GAMES.truth(); }));
   };
   b.appendChild(ok); b.appendChild(pass);
@@ -1822,7 +1919,7 @@ GAMES.ox = function(){
     r.appendChild(el("div","who", "실제 " + nm(owner) + "은(는)"));
     r.appendChild(el("div","val", answer ? "⭕ 맞다" : "❌ 아니다"));
     bb.appendChild(r);
-    bb.appendChild(el("div","drink", hit ? nm(owner) + " 한 잔! (읽혔네요)" : nm(guesser) + " 한 잔! (몰랐네요)"));
+    bb.appendChild(drink(hit ? owner : guesser, 1, hit ? nm(owner) + " 한 잔! (읽혔네요)" : nm(guesser) + " 한 잔! (몰랐네요)"));
     bb.appendChild(el("div","hint center", "왜 그렇게 생각했는지 얘기해보세요"));
     bb.appendChild(nextBtn("다음 →", () => { S.starter = other(S.starter); GAMES.ox(); }));
   };
@@ -1870,7 +1967,7 @@ GAMES.whoMore = function(){
       r.appendChild(el("div","val", nm(picks[k])));
       bb.appendChild(r);
     });
-    bb.appendChild(el("div","drink", same ? nm(picks.A) + " 한 잔! (둘 다 그렇게 봤네요)" : "엇갈렸으니 둘 다 한 잔!"));
+    bb.appendChild(drink(same ? picks.A : "both", 1, same ? nm(picks.A) + " 한 잔! (둘 다 그렇게 봤네요)" : "엇갈렸으니 둘 다 한 잔!"));
     bb.appendChild(el("div","hint center", "왜 그렇게 골랐는지 얘기해보세요"));
     bb.appendChild(nextBtn("다음 →", GAMES.whoMore));
   };
@@ -1909,7 +2006,11 @@ GAMES.threeSec = function(){
       const ok = el("button","btn ok wide", "✅ 성공");
       ok.onclick = () => { S.starter = other(S.starter); GAMES.threeSec(); };
       const no = el("button","btn wide", "🍺 실패 — " + nm(who) + " 한 잔");
-      no.onclick = () => { S.starter = other(S.starter); GAMES.threeSec(); };
+      no.onclick = () => {
+        const b4 = body();
+        b4.appendChild(drink(who, 1, nm(who) + " 한 잔!"));
+        b4.appendChild(nextBtn("다음 →", () => { S.starter = other(S.starter); GAMES.threeSec(); }));
+      };
       b3.appendChild(ok); b3.appendChild(no);
     });
   };
@@ -1946,7 +2047,7 @@ GAMES.initial = function(){
     const b = body();
     b.appendChild(el("div","res bad", nm(turn) + " 패배!"));
     b.appendChild(el("div","hint center", count + "개까지 이어졌습니다"));
-    b.appendChild(el("div","drink", nm(turn) + " 한 잔!"));
+    b.appendChild(drink(turn, 1, nm(turn) + " 한 잔!"));
     b.appendChild(nextBtn("다시 →", () => { S.starter = other(S.starter); GAMES.initial(); }));
   };
 
@@ -1996,7 +2097,7 @@ GAMES.telepathy = function(){
       r.appendChild(el("div","val", ans[k]));
       b.appendChild(r);
     });
-    b.appendChild(el("div","drink", same ? "통했다! 둘 다 한 잔 🥂" : "안 통했다… 둘 다 한 잔 🍺"));
+    b.appendChild(drink("both", 1, same ? "통했다! 둘 다 한 잔 🥂" : "안 통했다… 둘 다 한 잔 🍺"));
     b.appendChild(nextBtn("다음 →", GAMES.telepathy));
   };
 
@@ -2058,7 +2159,7 @@ GAMES.roulette = function(){
         done = true; stopTimer();
         c.classList.remove("used"); c.classList.add("boom"); c.textContent = "💥";
         status.textContent = "";
-        const r = el("div","drink", nm(turn) + " 당첨! 한 잔 🍺");
+        const r = drink(turn, 1, nm(turn) + " 당첨! 한 잔 🍺");
         b.appendChild(r);
         b.appendChild(nextBtn("다시 →", () => { S.starter = other(S.starter); GAMES.roulette(); }));
       }else{
@@ -2150,7 +2251,7 @@ GAMES.dare = function(){
         b3.appendChild(el("div","hint center", nm(other(who)) + " 차례로 넘어갑니다"));
       }else{
         b3.appendChild(el("div","res bad", "쫄았네 🐔"));
-        b3.appendChild(el("div","drink", nm(who) + " " + want + "잔!"));
+        b3.appendChild(drink(who, want, nm(who) + " " + want + "잔!"));
       }
       b3.appendChild(nextBtn("다음 도전 →", () => { S.starter = other(who); GAMES.dare(); }));
       const back = el("button","btn ghost wide", "로비로");
