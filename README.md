@@ -4,28 +4,25 @@
 
 ## 배포 (GitHub Pages)
 
-터미널에서 이 폴더에 들어와 실행하세요. `<아이디>`와 `<저장소이름>`만 본인 것으로 바꾸면 됩니다.
+저장소는 이미 연결돼 있습니다. 고친 뒤 push만 하면 됩니다.
 
 ```bash
 cd /workspace/Unist_DOE/make_applicaiton
-
-git init
-git add .
-git commit -m "둘이서 한잔 - 2인 술자리 게임"
-git branch -M main
-git remote add origin https://github.com/<아이디>/<저장소이름>.git
-git push -u origin main
+git add -A
+git commit -m "수정 내용"
+git push
 ```
 
-그다음 GitHub 웹에서:
+**최초 1회만** GitHub 웹에서 Pages를 켜야 합니다.
 
-1. 저장소 → **Settings** → 왼쪽 메뉴 **Pages**
+1. https://github.com/minjejeong/make_application/settings/pages
 2. Source: **Deploy from a branch**
 3. Branch: **main** / **/ (root)** 선택 → **Save**
-4. 1~2분 뒤 아래 주소로 접속
+
+1~2분 뒤 아래 주소로 접속됩니다.
 
 ```
-https://<아이디>.github.io/<저장소이름>/
+https://minjejeong.github.io/make_application/
 ```
 
 ## 폰에 앱으로 설치하기
@@ -80,9 +77,8 @@ PIN만 바꾸고 이 값을 그대로 두면, **이전에 한 번 열어본 폰�
 | 둘 중 누구? | 18 | 16 | 16 | 50 |
 | 3초 룰 / 초성 / 텔레파시 | 52 | 52 | 52 | 각 52 |
 | 쫄? (핵불닭 전용) | — | — | 50 | 50 |
-| 스토리 딜레마 | 2 | 2 | 2 | 6 |
 
-총 1,000개. 밸런스·질문·O/X는 수위가 올라갈수록 문항이 많아집니다
+총 994개. 밸런스·질문·O/X는 수위가 올라갈수록 문항이 많아집니다
 (30 → 60 → 90). 실제로 오래 노는 건 센 수위이므로 그쪽에 분량을 몰았습니다.
 
 ### 쫄? 모드
@@ -95,7 +91,6 @@ PIN만 바꾸고 이 값을 그대로 두면, **이전에 한 번 열어본 폰�
 
 모드를 추가하려면 `MODES` 배열에 `only: 3`을 넣으면 그 수위에서만 나타납니다.
 3초 룰·초성 릴레이·텔레파시는 수위 개념이 없어 어느 수위에서든 52개 전부 나옵니다.
-스토리 딜레마는 한 편이 분기 트리(시작 + 중간 노드 2 + 결말 2)라 6편으로 충분합니다.
 
 ```js
 const CONTENT = {
@@ -130,7 +125,7 @@ git push
 
 **대화가 터지는** — 밸런스 게임 · 질문 카드 · 나에 대한 O/X · 둘 중 누구?
 **분위기 전환** — 3초 룰 · 초성 릴레이 · 텔레파시
-**길게 가는** — 미션 카드 · 러시안 룰렛 · 스토리 딜레마
+**길게 가는** — 미션 카드 · 러시안 룰렛 · 쫄?(핵불닭 전용)
 
 ## 구조
 
