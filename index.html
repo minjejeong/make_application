@@ -467,7 +467,10 @@ const MODES = [
   {id:"story",    ic:"📖", nm:"스토리 딜레마", ds:"선택이 결말을 바꾼다",   tier:"C", lv:true},
 ];
 const TIER_NAME = {A:"대화가 터지는", B:"분위기 전환", C:"길게 가는"};
-const PIN_CODE = "0325";
+const PIN_CODE = "1024";
+/* 해제 상태 저장 키. PIN을 바꿀 때 이 키도 함께 바꿔야
+   이전에 해제해둔 폰에서 잠금이 다시 걸린다. */
+const UNLOCK_KEY = "unlocked_1024";
 
 /* =====================================================================
    상태 + 유틸
@@ -562,7 +565,7 @@ function pinKey(k){
   pinBuf += k; drawDots();
   if(pinBuf.length === 4){
     setTimeout(() => {
-      if(pinBuf === PIN_CODE){ store.set("unlocked","1"); pinBuf=""; drawDots(); openLobby(); }
+      if(pinBuf === PIN_CODE){ store.set(UNLOCK_KEY,"1"); pinBuf=""; drawDots(); openLobby(); }
       else{
         $("#pinMsg").textContent = "비밀번호가 틀렸습니다";
         $("#dots").classList.add("shake");
@@ -618,7 +621,7 @@ function initLobby(){
   });
   syncSeg();
 
-  $("#lockBtn").onclick = () => { store.del("unlocked"); pinBuf=""; drawDots(); $("#pinMsg").textContent="비밀번호 4자리를 입력하세요"; show("pinView"); };
+  $("#lockBtn").onclick = () => { store.del(UNLOCK_KEY); pinBuf=""; drawDots(); $("#pinMsg").textContent="비밀번호 4자리를 입력하세요"; show("pinView"); };
   $("#randomBtn").onclick = () => openGame(MODES[Math.floor(Math.random()*MODES.length)].id);
 
   const list = $("#modeList");
@@ -1107,7 +1110,7 @@ GAMES.story = function(){
 initPin();
 initLobby();
 initGame();
-if(store.get("unlocked") === "1") openLobby(); else show("pinView");
+if(store.get(UNLOCK_KEY) === "1") openLobby(); else show("pinView");
 
 /* 오프라인 지원: 서비스 워커 등록.
    file:// 로 직접 열었거나 미지원 브라우저면 조용히 건너뛴다 (게임은 그대로 동작). */
