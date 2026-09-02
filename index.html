@@ -999,9 +999,11 @@ function shuffle(arr){
   return a;
 }
 
-// 수위 필터 + 소진될 때까지 중복 없이 뽑기
+/* 수위 필터 + 소진될 때까지 중복 없이 뽑기.
+   고른 수위의 문항만 나온다 (누적 아님) — 핵불닭을 고르면 핵불닭만.
+   level이 없는 모드(3초룰·초성·텔레파시)는 수위와 무관하게 전부 대상. */
 function draw(modeId, pool){
-  const list = pool.filter(it => it.level == null || it.level <= S.level);
+  const list = pool.filter(it => it.level == null || it.level === S.level);
   if(!list.length) return null;
   const key = modeId + "_" + S.level;
   if(!S.used[key] || !S.used[key].length) S.used[key] = shuffle(list.map((_,i)=>i));
