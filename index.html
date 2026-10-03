@@ -320,7 +320,6 @@ input{font:inherit}
           <button data-lv="3">핵불닭</button>
           <button data-lv="4">불지옥</button>
         </div>
-        <div class="hint center" id="levelHint" style="margin-top:8px;font-size:13px"></div>
       </div>
       <button class="btn primary wide" id="randomBtn">🎲 랜덤으로 시작</button>
     </div>
@@ -2843,7 +2842,7 @@ const CONTENT = {
   /* 9. 쫄? — 핵불닭 이상. dare = 룰렛 칸 (1 가볍게 10% · 2 세게 20% · 3 미친놈 30% · 4 끝장 40%).
      남녀일 때 여자는 한 칸 위 문항을 받는다 (5 = 여자 전용 끝장+). {상대}·g는 도전하는 사람 기준 */
   dare: [
-    // ── 🍺 가볍게 (실패 1잔) · 공통
+    // ── 🍺 가볍게 · 공통
     {text:"{상대}랑 손깍지 끼고 다음 판 끝날 때까지 놓지 않기", dare:1},
     {text:"{상대} 옆으로 옮겨 앉아서 어깨에 머리 기대고 1분 버티기", dare:1},
     {text:"{상대}랑 새끼손가락 걸고 '오늘 일은 비밀' 약속하기. 도장, 복사까지 해야 성공", dare:1},
@@ -2924,7 +2923,7 @@ const CONTENT = {
     {text:"{상대} 이름으로 n행시 하기. 전부 플러팅으로", dare:1},
     {text:"{상대} 소개하는 랩 8마디 즉석에서 하기", dare:1},
     {text:"제일 느끼한 플러팅 멘트 세 개 {상대} 눈 보고 하기. 웃으면 처음부터", dare:1},
-    // ── 🍺 가볍게 (실패 1잔) · 남자가 받는
+    // ── 🍺 가볍게 · 남자가 받는
     {text:"겉옷 벗어서 {상대} 어깨에 걸쳐주고 '추우면 말해' 하기", dare:1, g:"m"},
     {text:"팔에 힘주고 {상대}한테 '만져봐' 하기. {상대}가 만져볼 때까지", dare:1, g:"m"},
     {text:"스쿼트 열 개 하기. 앉을 때마다 {상대} 칭찬 하나씩", dare:1, g:"m"},
@@ -2955,7 +2954,7 @@ const CONTENT = {
     {text:"질투하는 남친 연기 30초. '그 남자 누군데?'로 시작하기", dare:1, g:"m"},
     {text:"두 손으로 술 따르면서 '공주님, 한 잔 받으시죠' 하기", dare:1, g:"m"},
     {text:"{상대} 눈 보면서 '너 웃는 거 반칙이야' 하고 5초 동안 안 웃기", dare:1, g:"m"},
-    // ── 🔥 세게 (실패 2잔) · 공통
+    // ── 🔥 세게 · 공통
     {text:"{상대}랑 일어서서 20초 동안 꽉 안고 있기", dare:2},
     {text:"{상대} 안고 등 토닥이면서 '오늘 고생했어' 하기", dare:2},
     {text:"{상대} 뒤로 가서 백허그하고 10초 동안 좌우로 천천히 흔들기", dare:2},
@@ -3036,7 +3035,7 @@ const CONTENT = {
     {text:"{상대}한테 '내가 너 좋아하면 어떡할 거야?' 묻고 대답 들을 때까지 눈 안 피하기", dare:2},
     {text:"{상대}랑 연인인 척 마주 보고 1분 동안 전화하는 상황극 하기", dare:2},
     {text:"{상대}가 내 이상형이랑 닮은 점 세 개 말하기", dare:2},
-    // ── 🔥 세게 (실패 2잔) · 남자가 받는
+    // ── 🔥 세게 · 남자가 받는
     {text:"{상대} 머리카락 귀 뒤로 넘겨주면서 3초 동안 눈 맞추기", dare:2, g:"m"},
     {text:"{상대} 뒤에 서서 정수리에 3초 동안 입 맞추기", dare:2, g:"m"},
     {text:"{상대} 턱 손가락으로 살짝 들어 올리고 5초 동안 눈 맞추기", dare:2, g:"m"},
@@ -3062,7 +3061,7 @@ const CONTENT = {
     {text:"{상대} 눈 보면서 '오늘 집까지 데려다줄게' 하고 대답 들을 때까지 기다리기", dare:2, g:"m"},
     {text:"{상대}한테 오늘 반한 순간 세 개 눈 보면서 말하기", dare:2, g:"m"},
     {text:"{상대}한테 애프터 신청하기. 날짜랑 장소까지 정해야 성공", dare:2, g:"m"},
-    // ── 🔥 세게 (실패 2잔) · 여자가 받는
+    // ── 🔥 세게 · 여자가 받는
     {text:"{상대} 손 끌어다 내 머리에 얹고 '쓰담쓰담 해줘' 하기. 10초 동안", dare:2, g:"f"},
     {text:"{상대} 팔짱 끼고 어깨에 머리 기대서 '오늘 집에 가기 싫다' 하기", dare:2, g:"f"},
     {text:"{상대} 볼 한 손으로 잡아서 내 쪽으로 돌리고 '나만 봐' 하기", dare:2, g:"f"},
@@ -3088,7 +3087,7 @@ const CONTENT = {
     {text:"{상대} 눈 보고 '내 남친이 너였으면 좋겠다' 하고 5초 동안 눈 안 피하기", dare:2, g:"f"},
     {text:"{상대}한테 '오늘 나 어때?' 묻고 칭찬 세 개 들을 때까지 조르기", dare:2, g:"f"},
     {text:"{상대} 매력을 남자 연예인에 빗대서 세 개 말하기", dare:2, g:"f"},
-    // ── 💀 미친놈 (실패 3잔) · 공통
+    // ── 💀 미친놈 · 공통
     {text:"{상대} 양쪽 볼에 한 번씩 뽀뽀하고 '한 번 더 해줄까?' 묻기", dare:3},
     {text:"{상대} 코끝에 내 코끝 대고 10초 버티기, 먼저 웃으면 실패", dare:3},
     {text:"{상대} 옆자리로 가서 허리 감아 내 쪽으로 확 끌어당기고 10초 눈 맞추기", dare:3},
@@ -3169,7 +3168,7 @@ const CONTENT = {
     {text:"지금까지 사귄 사람 수랑 썸만 탄 사람 수 둘 다 말하기", dare:3},
     {text:"{상대} 옆에 누가 있어서 질투 났던 적 말하기, 언제 누구였는지까지", dare:3},
     {text:"{상대}한테 '좋아해' 카톡 보내고 {상대}가 소리 내서 읽게 하기", dare:3},
-    // ── 💀 미친놈 (실패 3잔) · 남자가 받는
+    // ── 💀 미친놈 · 남자가 받는
     {text:"{상대} 허리 감아서 내 무릎 위에 옆으로 앉히고 20초 버티기", dare:3, g:"m"},
     {text:"{상대} 손 잡고 '오늘부터 1일 할래?' 묻고 대답 들을 때까지 손 안 놓기", dare:3, g:"m"},
     {text:"{상대} 뒤에서 안고 어깨에 턱 올린 채 귀에 대고 노래 한 소절 불러주기", dare:3, g:"m"},
@@ -3195,7 +3194,7 @@ const CONTENT = {
     {text:"마지막 연애 때 전 여친이 제일 서운해했던 거 말하기", dare:3, g:"m"},
     {text:"내가 남자로 몇 점인지 {상대}한테 묻고, 점수 올려달라고 30초 동안 어필하기", dare:3, g:"m"},
     {text:"썸 탈 때 쓰는 내 플러팅 멘트 {상대}한테 그대로 해보기", dare:3, g:"m"},
-    // ── 💀 미친놈 (실패 3잔) · 여자가 받는
+    // ── 💀 미친놈 · 여자가 받는
     {text:"{상대} 무릎 위에 옆으로 앉아서 {상대} 볼 두 손으로 잡고 10초 눈 맞추기", dare:3, g:"f"},
     {text:"{상대} 팔짱 끼고 어깨에 볼 기댄 채 애교 섞어서 '나 데려가' 하기", dare:3, g:"f"},
     {text:"{상대} 팔뚝에 뽀뽀하고 '단단하네' 하기", dare:3, g:"f"},
@@ -3221,7 +3220,7 @@ const CONTENT = {
     {text:"{상대} 눈 보고 '나 오늘 집에 늦게 들어가도 돼' 말하기", dare:3, g:"f"},
     {text:"{상대}한테 내 폰 비밀번호 알려주고 직접 잠금 풀어보게 하기", dare:3, g:"f"},
     {text:"{상대}한테서 남자로 제일 끌리는 데 하나 콕 집어 말하기", dare:3, g:"f"},
-    // ── ☠️ 끝장 (실패 4잔) · 공통
+    // ── ☠️ 끝장 · 공통
     {text:"{상대} 입술에 뽀뽀하고 5초 동안 안 떼기", dare:4},
     {text:"{상대} 입술에 짧게 세 번 연달아 뽀뽀하기", dare:4},
     {text:"{상대} 볼, 코끝, 입술 순서로 뽀뽀하기", dare:4},
@@ -3302,7 +3301,7 @@ const CONTENT = {
     {text:"내 몸에서 제일 자신 있는 데 하나 말하고 이유 대기", dare:4},
     {text:"지금 {상대}한테 제일 듣고 싶은 말 하나 대고, {상대}가 귀에 해주게 하기", dare:4},
     {text:"하루에 제일 많이 해본 게 몇 번인지 말하기", dare:4},
-    // ── ☠️ 끝장 (실패 4잔) · 남자가 받는
+    // ── ☠️ 끝장 · 남자가 받는
     {text:"{상대} 허리 잡고 내 무릎 위에 마주 보게 끌어올려 앉힌 다음 키스하기", dare:4, g:"m"},
     {text:"{상대} 허리 끌어안고 일으켜 세운 다음 그대로 키스하기", dare:4, g:"m"},
     {text:"{상대} 공주님 안기로 들어 올린 채 입술에 뽀뽀하기", dare:4, g:"m"},
@@ -3328,7 +3327,7 @@ const CONTENT = {
     {text:"여자 속옷 중에 제일 좋아하는 스타일 말하기", dare:4, g:"m"},
     {text:"{상대} 오늘 차림에서 제일 섹시한 데 하나 꼽고 이유 말하기", dare:4, g:"m"},
     {text:"제일 오래 해본 게 몇 시간인지 말하기", dare:4, g:"m"},
-    // ── ☠️ 끝장 (실패 4잔) · 여자가 받는
+    // ── ☠️ 끝장 · 여자가 받는
     {text:"{상대} 무릎 위에 마주 보고 앉아서 {상대} 귓불 살짝 깨물기", dare:4, g:"f"},
     {text:"{상대} 옷깃 잡아끌어서 입술에 뽀뽀하기", dare:4, g:"f"},
     {text:"{상대} 목젖에 뽀뽀하고 턱 끝까지 입맞춤으로 올라가기", dare:4, g:"f"},
@@ -3432,7 +3431,7 @@ const CONTENT = {
     {text:"지금까지 몇 명이랑 잤는지 {상대} 귀에 속삭이기", dare:5},
     {text:"잠자리에서 아직 안 해봤는데 해보고 싶은 거 하나 말하기", dare:5},
     {text:"오늘 {상대}랑 하게 되면 어디서 할지 골라서 말하기. 우리 집, {상대} 집, 모텔 중에", dare:5},
-    {text:"{상대}가 묻는 19금 질문 세 개에 바로 대답하기. 하나라도 넘기면 실패", dare:5},
+    {text:"{상대}가 묻는 야한 질문 세 개에 바로 대답하기. 하나라도 넘기면 실패", dare:5},
     {text:"얼굴 빼고 {상대} 몸에서 섹시한 데 다섯 개 말하기", dare:5},
     {text:"전 애인이랑 해본 것 중에 {상대}랑도 해보고 싶은 거 하나 말하기", dare:5},
   ],
@@ -3719,7 +3718,6 @@ const MODES = [
   {id:"lie",      ic:"👁️", nm:"진실의 눈",   ds:"거짓말을 잡아내라",       tier:"C", lv:false, min:3},
 ];
 const LEVELS = [1,2,3,4];
-const LEVEL_DESC = {1:"사적인 얘기까지", 2:"숨기고 싶은 비밀까지", 3:"서로를 이성으로", 4:"19금"};
 const TIER_NAME = {A:"대화가 터지는", B:"분위기 전환", C:"길게 가는"};
 const PIN_CODE = "1024";
 /* 해제 상태 저장 키. PIN을 바꿀 때 이 키도 함께 바꿔야
@@ -4058,19 +4056,13 @@ function renderModes(){
     list.appendChild(g);
   });
 }
-/* 수위·성별 버튼 상태와 그 아래 한 줄 설명을 맞춘다 */
+/* 수위·성별 버튼 상태를 맞춘다.
+   성별 규칙(여자가 받는 문항은 한 단계 위)은 화면에 따로 적지 않는다. */
 function syncSeg(){
   [...$("#levelSeg").children].forEach(b => b.classList.toggle("on", parseInt(b.dataset.lv,10) === S.level));
   document.querySelectorAll(".gseg").forEach(seg => {
     [...seg.children].forEach(b => b.classList.toggle("on", S.gender[seg.dataset.k] === b.dataset.g));
   });
-  let t = LEVEL_DESC[S.level];
-  if(S.level >= 3){
-    if(mixed()) t += " · 여자는 한 단계 더 세게";
-    else if(S.gender.A && S.gender.B) t += " · 동성끼리는 공통 문항만 나와요";
-    else t += " · 성별을 고르면 남녀 맞춤 문항이 나와요";
-  }
-  $("#levelHint").textContent = t;
 }
 
 /* =====================================================================
@@ -4563,7 +4555,7 @@ GAMES.roulette = function(){
 
 /* ---------------------------------------------------------------------
    10. 쫄? — 핵불닭 이상에서 열리는 도전 모드.
-   칸은 고르는 게 아니라 룰렛이 정한다 (p = 확률 %). 못 하면 칸 숫자만큼 마신다.
+   칸은 고르는 게 아니라 룰렛이 정한다 (p = 확률 %). 못 하면 칸과 상관없이 한 잔.
    남녀일 때 여자는 같은 칸에서도 한 단계 센 도전을 받는다
    (가볍게 칸 → dare 2 문항 … 끝장 칸 → dare 5 = 여자 전용).
    --------------------------------------------------------------------- */
@@ -4584,7 +4576,7 @@ GAMES.dare = function(){
   const b = body();
   b.appendChild(el("div","turn", nm(who) + " 차례"));
   b.appendChild(el("div","card center", "").appendChild(el("div","qtext","쫄?")).parentElement);
-  b.appendChild(el("div","hint center", "칸은 룰렛이 정해요. 고를 수 없어요.\n해내거나, 못 하면 칸 숫자만큼 마시기"));
+  b.appendChild(el("div","hint center", "칸은 룰렛이 정해요. 고를 수 없어요.\n해내거나, 못 하면 한 잔"));
 
   // 칸 표시 슬롯 (룰렛이 여기서 돌아간다)
   const slot = el("div","slot");
@@ -4630,21 +4622,18 @@ GAMES.dare = function(){
     const bb = body();
     bb.appendChild(el("div","turn", nm(who) + "의 도전"));
     const card = el("div","card center");
-    card.appendChild(el("div","label", t.ic + " " + t.nm + " · 못 하면 " + want + "잔"));
+    card.appendChild(el("div","label", t.ic + " " + t.nm));
     card.appendChild(el("div","qtext", q ? fill(q.text, who) : "이 칸에 맞는 도전이 없어요"));   // 도전하는 사람 기준
     bb.appendChild(card);
 
     const done = (success) => {
       const b3 = body();
-      if(success === null){
-        b3.appendChild(el("div","res", "패스"));
-        b3.appendChild(el("div","hint center", "상대가 싫다고 하면 벌주 없이 넘어가요"));
-      }else if(success){
+      if(success){
         b3.appendChild(el("div","res good", "해냈다! 😎"));
         b3.appendChild(el("div","hint center", "이제 " + nm(other(who)) + " 차례"));
       }else{
         b3.appendChild(el("div","res bad", "쫄았네 🐔"));
-        b3.appendChild(drink(who, want, nm(who) + " " + want + "잔!"));
+        b3.appendChild(drink(who, 1, nm(who) + " 한 잔!"));
       }
       b3.appendChild(nextBtn("다음 도전 →", () => { S.starter = other(who); GAMES.dare(); }));
       const back = el("button","btn ghost wide", "로비로");
@@ -4654,12 +4643,9 @@ GAMES.dare = function(){
 
     const ok = el("button","btn ok wide", "✅ 해냈다");
     ok.onclick = () => done(true);
-    const no = el("button","btn wide", "🍺 못 하겠다 (" + want + "잔)");
+    const no = el("button","btn wide", "🍺 못 하겠다 (한 잔)");
     no.onclick = () => done(false);
-    // 상대 몸이 걸린 도전이 많으니, 받는 쪽이 싫다고 하면 언제든 벌주 없이 넘긴다
-    const refuse = el("button","btn ghost wide", "🙅 " + J(other(who), "가 싫대요 (벌주 없음)"));
-    refuse.onclick = () => done(null);
-    bb.appendChild(ok); bb.appendChild(no); bb.appendChild(refuse);
+    bb.appendChild(ok); bb.appendChild(no);
   };
 };
 
