@@ -1,0 +1,1208 @@
+/* =====================================================================
+   둘이서 — 앱 본체
+   화면은 전부 이 파일이 그린다. 저장은 api가 맡는데, 둘 중 하나다.
+     SupaApi : Supabase (두 사람 폰이 연동된다)
+     DemoApi : 이 폰 안에만 저장 (서버 설정 전 둘러보기용, 상대 입장으로 바꿔 볼 수 있다)
+   화면 코드는 api 종류를 몰라도 되게 짰다.
+   ===================================================================== */
+"use strict";
+(() => {
+const CFG = window.DURISEO_CONFIG || {};
+const DATA = window.DURISEO_DATA;
+const H = DATA.hearts;
+const MODE_KEY = "duriseo_mode";       // "demo"면 데모로 연다
+
+/* =====================================================================
+   작은 도구들
+   ===================================================================== */
+const $ = (s) => document.querySelector(s);
+
+// h("div", {class:"x", onclick: fn}, 자식들...) — 문자열 자식은 텍스트로만 들어간다
+function h(tag, props, ...kids) {
+  const el = document.createElement(tag);
+  if (props) for (const [k, v] of Object.entries(props)) {
+    if (v == null || v === false) continue;
+    if (k === "class") el.className = v;
+    else if (k === "style") Object.assign(el.style, v);
+    else if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2), v);
+    else if (k === "value") el.value = v;
+    else el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of kids.flat(Infinity)) {
+    if (c == null || c === false) continue;
+    el.append(c instanceof Node ? c : String(c));
+  }
+  return el;
+}
+const view = (...kids) => $("#view").replaceChildren(...kids.flat(Infinity).filter(Boolean));
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const uuid = () => (crypto.randomUUID ? crypto.randomUUID()
+  : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+      const r = Math.random() * 16 | 0; return (c === "x" ? r : (r & 3 | 8)).toString(16);
+    }));
+
+const ICON = {
+  home: '<svg viewBox="0 0 24 24"><path d="M3.5 10.5 12 3.5l8.5 7V20a1 1 0 0 1-1 1H15v-6H9v6H4.5a1 1 0 0 1-1-1z"/></svg>',
+  cal:  '<svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
+  q:    '<svg viewBox="0 0 24 24"><path d="M20.5 11.5c0 4.1-3.8 7.4-8.5 7.4-1.3 0-2.5-.2-3.6-.7L4 20l1.3-3.7A6.9 6.9 0 0 1 3.5 11.5C3.5 7.4 7.3 4 12 4s8.5 3.4 8.5 7.5z"/></svg>',
+  bal:  '<svg viewBox="0 0 24 24"><path d="M12 4v16M7.5 20h9M5 7.5h14M5 7.5 2.5 14a2.6 2.6 0 0 0 5 0zM19 7.5 16.5 14a2.6 2.6 0 0 0 5 0z"/></svg>',
+  us:   '<svg viewBox="0 0 24 24"><path d="M12 20s-7.5-4.6-7.5-10.1A4.3 4.3 0 0 1 12 7.6a4.3 4.3 0 0 1 7.5 2.3C19.5 15.4 12 20 12 20z"/></svg>',
+};
+function icon(name) { const s = document.createElement("span"); s.innerHTML = ICON[name]; return s.firstChild; }
+
+let toastTimer = null;
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.classList.remove("hide");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.add("hide"), 2400);
+}
+
+/* ---------- 날짜 ---------- */
+const pad = (n) => String(n).padStart(2, "0");
+const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const today = () => ymd(new Date());
+const dayNum = (s) => { const [y, m, d] = s.split("-").map(Number); return Date.UTC(y, m - 1, d) / 864e5; };
+const daysBetween = (a, b) => dayNum(b) - dayNum(a);
+const addDays = (s, n) => { const [y, m, d] = s.split("-").map(Number); return ymd(new Date(y, m - 1, d + n)); };
+const WEEK = ["일", "월", "화", "수", "목", "금", "토"];
+function fmtDate(s) { const [y, m, d] = s.split("-").map(Number); return `${m}월 ${d}일 (${WEEK[new Date(y, m - 1, d).getDay()]})`; }
+function fmtShort(s) { const [y, m, d] = s.split("-").map(Number); return `${y}.${m}.${d}`; }
+function fmtTime(iso) { const d = new Date(iso); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+
+/* ---------- 조사: 이름 받침에 맞춘다 (지연이 / 민수가) ---------- */
+const JOSA = { "가": ["가", "이"], "이": ["가", "이"], "는": ["는", "은"], "은": ["는", "은"], "를": ["를", "을"], "을": ["를", "을"],
+               "와": ["와", "과"], "과": ["와", "과"], "랑": ["랑", "이랑"] };
+function josa(name, rest) {
+  const pair = JOSA[rest.charAt(0)];
+  if (!pair) return name + rest;
+  const c = name.trim().slice(-1).charCodeAt(0);
+  const jong = c >= 0xAC00 && c <= 0xD7A3 && (c - 0xAC00) % 28 !== 0;
+  return name + (jong ? pair[1] : pair[0]) + rest.slice(1);
+}
+
+/* ---------- 커플마다 고정된 순서 (둘의 폰이 같은 순서를 본다) ---------- */
+function hashStr(s) { let x = 2166136261; for (let i = 0; i < s.length; i++) { x ^= s.charCodeAt(i); x = Math.imul(x, 16777619); } return x >>> 0; }
+function rng(seed) {
+  let a = seed >>> 0;
+  return () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+function shuffled(arr, seed) {
+  const r = rng(seed), a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+const memoStore = {};
+const memo = (k, f) => memoStore[k] || (memoStore[k] = f());
+
+/* =====================================================================
+   콘텐츠 색인 (data.js)
+   ===================================================================== */
+const Q = [], QMAP = {};
+DATA.categories.forEach((c) => c.qs.forEach((text, i) => {
+  const q = { id: `${c.id}-${i + 1}`, cat: c.id, text }; Q.push(q); QMAP[q.id] = q;
+}));
+const CAT = Object.fromEntries(DATA.categories.map((c) => [c.id, c]));
+const BAL = DATA.balance.map(([a, b, cat], i) => ({ id: `b-${i + 1}`, a, b, cat }));
+const BMAP = Object.fromEntries(BAL.map((x) => [x.id, x]));
+const OBJ = Object.fromEntries(DATA.objects.map((o) => [o.key, o]));
+const WALL = Object.fromEntries(DATA.walls.map((w) => [w.key, w]));
+const FLOOR = Object.fromEntries(DATA.floors.map((f) => [f.key, f]));
+
+// 오늘의 질문: 카테고리를 번갈아 섞은 커플 고유 순서에서, 커플 만든 날부터 하루에 하나씩
+function questionOrder(couple) {
+  return memo("qo:" + couple.id, () => {
+    const seed = hashStr(couple.id);
+    const lists = DATA.categories.map((c, i) => shuffled(Q.filter((q) => q.cat === c.id), seed + i * 7919));
+    const out = [], max = Math.max(...lists.map((l) => l.length));
+    for (let k = 0; k < max; k++) for (const l of lists) if (k < l.length) out.push(l[k]);
+    return out;
+  });
+}
+function todayQ(couple = S.couple) {
+  const order = questionOrder(couple);
+  const idx = Math.max(0, daysBetween(ymd(new Date(couple.created_at)), today()));
+  return order[idx % order.length];
+}
+const balOrder = () => memo("bo:" + S.couple.id, () => shuffled(BAL, hashStr(S.couple.id) ^ 0x9E3779B9));
+
+/* =====================================================================
+   상태
+   ===================================================================== */
+const S = {
+  api: null,
+  user: null,        // {id, email}
+  couple: null,      // couples 행
+  members: [],       // [{user_id, nickname}]
+  answers: {},       // question_id -> {user_id: {answer, created_at}}
+  picks: {},         // item_id -> {user_id: {pick, created_at}}
+  room: [],          // room_items 행
+  entryCount: 0,
+  entries: {},       // "YYYY-MM" -> entries 행들
+  urls: {},          // 사진 경로 -> 보여줄 주소
+  tab: "home",
+  calMonth: today().slice(0, 7),
+  qCat: null,        // 질문 탭에서 연 카테고리
+  qEdit: false,
+  balShow: null,     // 방금 고른 밸런스 문항 (결과 화면 유지용)
+  editing: false,    // 방 꾸미기 중
+  sel: null,         // 고른 오브제 id
+  dragging: false,
+  shopTab: "shop",
+  dayForm: null,
+};
+const me = () => S.user && S.user.id;
+const partner = () => S.members.find((m) => m.user_id !== me());
+const pid = () => { const p = partner(); return p && p.user_id; };
+const nick = (uid) => {
+  const m = S.members.find((x) => x.user_id === uid);
+  return (m && m.nickname) || (uid === me() ? "나" : "상대");
+};
+const ansOf = (qid, uid) => uid && S.answers[qid] && S.answers[qid][uid];
+const pickOf = (id, uid) => uid && S.picks[id] && S.picks[id][uid] && S.picks[id][uid].pick;
+const bothAnswered = (qid) => !!(ansOf(qid, me()) && ansOf(qid, pid()));
+const waitingQs = () => Q.filter((q) => ansOf(q.id, pid()) && !ansOf(q.id, me()));
+const waitingPicks = () => BAL.filter((b) => pickOf(b.id, pid()) && !pickOf(b.id, me()));
+
+function priceOf(key) {
+  if (key.startsWith("wall:")) return (WALL[key.slice(5)] || {}).price || 0;
+  if (key.startsWith("floor:")) return (FLOOR[key.slice(6)] || {}).price || 0;
+  return (OBJ[key] || {}).price || 0;
+}
+// 하트 = 시작 선물 + 둘이 한 활동 − 산 물건. 따로 저장하지 않고 매번 센다.
+function hearts() {
+  let n = H.start + S.entryCount * H.entry;
+  for (const k in S.answers) n += Object.keys(S.answers[k]).length * H.answer;
+  for (const k in S.picks) n += Object.keys(S.picks[k]).length * H.pick;
+  for (const it of S.room) n -= priceOf(it.object_key);
+  return n;
+}
+
+/* ---------- 기념일 ---------- */
+function annivLabel(ds) {
+  const s = S.couple && S.couple.start_date;
+  if (!s) return "";
+  const n = daysBetween(s, ds) + 1;
+  if (n === 1) return "시작한 날";
+  if (n > 1 && n % 100 === 0) return `${n}일`;
+  const [sy, sm, sd] = s.split("-").map(Number), [y, m, d] = ds.split("-").map(Number);
+  if (y > sy && m === sm && d === sd) return `${y - sy}주년`;
+  return "";
+}
+function nextAnniv() {
+  if (!S.couple.start_date) return null;
+  const t = today();
+  for (let i = 0; i <= 400; i++) {
+    const ds = addDays(t, i), l = annivLabel(ds);
+    if (l && l !== "시작한 날") return { date: ds, label: l, in: i };
+  }
+  return null;
+}
+
+/* =====================================================================
+   API — Supabase
+   ===================================================================== */
+function SupaApi() {
+  const sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+  });
+  const ok = (r) => { if (r.error) throw r.error; return r.data; };
+  const cid = () => S.couple.id;
+  const uid = () => S.user.id;
+  return {
+    kind: "supabase",
+    async session() {
+      const { data } = await sb.auth.getSession();
+      const u = data.session && data.session.user;
+      return u ? { id: u.id, email: u.email } : null;
+    },
+    onSignedOut(cb) { sb.auth.onAuthStateChange((ev) => { if (ev === "SIGNED_OUT") cb(); }); },
+    async signUp(email, password) {
+      const d = ok(await sb.auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } }));
+      return d.session ? { id: d.user.id, email: d.user.email } : null;   // null = 메일 확인 필요
+    },
+    async signIn(email, password) {
+      const d = ok(await sb.auth.signInWithPassword({ email, password }));
+      return { id: d.user.id, email: d.user.email };
+    },
+    async signOut() { await sb.auth.signOut(); },
+
+    async loadCouple() {
+      const m = ok(await sb.from("couple_members").select("couple_id").eq("user_id", uid()).maybeSingle());
+      if (!m) return null;
+      const couple = ok(await sb.from("couples").select("*").eq("id", m.couple_id).single());
+      const members = ok(await sb.from("couple_members").select("user_id,nickname,joined_at").eq("couple_id", couple.id).order("joined_at"));
+      return { couple, members };
+    },
+    async createCouple(nickname, start) { return ok(await sb.rpc("create_couple", { p_nickname: nickname, p_start: start || null })); },
+    async joinCouple(code, nickname) { return ok(await sb.rpc("join_couple", { p_code: code, p_nickname: nickname })); },
+    async leaveCouple() {
+      // 마지막 한 명이 나가면 커플 데이터가 지워지니, 사진 파일도 미리 지운다 (파일은 SQL로 못 지운다)
+      try {
+        const left = ok(await sb.from("couple_members").select("user_id").eq("couple_id", cid()));
+        if (left.length <= 1) {
+          const bucket = sb.storage.from("photos");
+          for (let i = 0; i < 100; i++) {
+            const files = ok(await bucket.list(cid(), { limit: 100 })).filter((f) => f.id);
+            if (!files.length) break;
+            ok(await bucket.remove(files.map((f) => `${cid()}/${f.name}`)));
+          }
+        }
+      } catch (e) { console.warn(e); }
+      ok(await sb.rpc("leave_couple"));
+    },
+    async updateCouple(patch) { ok(await sb.from("couples").update(patch).eq("id", cid())); },
+    async updateNickname(nickname) { ok(await sb.from("couple_members").update({ nickname }).eq("couple_id", cid()).eq("user_id", uid())); },
+
+    async loadAnswers() { return ok(await sb.from("answers").select("question_id,user_id,answer,created_at").eq("couple_id", cid())); },
+    async loadPicks() { return ok(await sb.from("balance_picks").select("item_id,user_id,pick,created_at").eq("couple_id", cid())); },
+    async loadRoom() { return ok(await sb.from("room_items").select("*").eq("couple_id", cid()).order("created_at")); },
+    async countEntries() {
+      const r = await sb.from("entries").select("id", { count: "exact", head: true }).eq("couple_id", cid());
+      if (r.error) throw r.error;
+      return r.count || 0;
+    },
+    async loadEntries(from, to) {
+      return ok(await sb.from("entries").select("*").eq("couple_id", cid()).gte("day", from).lte("day", to).order("created_at"));
+    },
+
+    async saveAnswer(qid, answer) {
+      ok(await sb.from("answers").upsert({ couple_id: cid(), question_id: qid, user_id: uid(), answer },
+        { onConflict: "couple_id,question_id,user_id" }));
+    },
+    async savePick(item_id, pick) {
+      ok(await sb.from("balance_picks").upsert({ couple_id: cid(), item_id, user_id: uid(), pick },
+        { onConflict: "couple_id,item_id,user_id" }));
+    },
+    async addEntry({ day, memo: text, photo, thumb }) {
+      let photo_path = null, thumb_path = null;
+      if (photo) {
+        const id = uuid(), bucket = sb.storage.from("photos");
+        photo_path = `${cid()}/${id}.jpg`;
+        thumb_path = `${cid()}/${id}_t.jpg`;
+        ok(await bucket.upload(photo_path, photo, { contentType: "image/jpeg" }));
+        ok(await bucket.upload(thumb_path, thumb, { contentType: "image/jpeg" }));
+      }
+      return ok(await sb.from("entries").insert({ couple_id: cid(), user_id: uid(), day, memo: text, photo_path, thumb_path }).select().single());
+    },
+    async deleteEntry(e) {
+      ok(await sb.from("entries").delete().eq("id", e.id));
+      const paths = [e.photo_path, e.thumb_path].filter(Boolean);
+      if (paths.length) await sb.storage.from("photos").remove(paths);
+    },
+    async buyItem(object_key, extra) {
+      return ok(await sb.from("room_items").insert({ couple_id: cid(), object_key, ...extra }).select().single());
+    },
+    async updateItem(id, patch) { ok(await sb.from("room_items").update(patch).eq("id", id)); },
+    async urls(paths) {
+      const r = ok(await sb.storage.from("photos").createSignedUrls(paths, 6 * 3600));
+      const out = {};
+      for (const x of r) if (x.signedUrl && x.path) out[x.path] = x.signedUrl;
+      return out;
+    },
+    subscribe(onChange) {
+      const id = cid();
+      const ch = sb.channel("duriseo-" + id);
+      for (const t of ["answers", "balance_picks", "room_items", "entries", "couple_members"])
+        ch.on("postgres_changes", { event: "*", schema: "public", table: t, filter: `couple_id=eq.${id}` }, () => onChange(t));
+      ch.on("postgres_changes", { event: "*", schema: "public", table: "couples", filter: `id=eq.${id}` }, () => onChange("couples"));
+      // 필터를 건 구독에는 삭제가 오지 않으므로, 삭제는 따로 받는다 (지워진 행의 id만 온다)
+      for (const t of ["entries", "room_items", "couple_members"])
+        ch.on("postgres_changes", { event: "DELETE", schema: "public", table: t }, () => onChange(t));
+      ch.subscribe();
+      return () => sb.removeChannel(ch);
+    },
+  };
+}
+
+/* =====================================================================
+   API — 데모 (이 폰에만 저장)
+   ===================================================================== */
+function DemoApi() {
+  const KEY = "duriseo_demo_v1", ME = "u-me", YOU = "u-you";
+  let D = null;
+  try { D = JSON.parse(localStorage.getItem(KEY)); } catch (e) { D = null; }
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(D)); } catch (e) { throw new Error("demo_quota"); } };
+  const uid = () => D.as;
+  const copy = (o) => JSON.parse(JSON.stringify(o));
+  const stamp = () => new Date().toISOString();
+
+  async function seed() {
+    const couple = {
+      id: "demo-" + Math.random().toString(36).slice(2, 10), invite_code: "DEMO26",
+      start_date: addDays(today(), -87), wall: "cream", floor: "wood",
+      created_at: new Date(Date.now() - 2 * 864e5).toISOString(),
+    };
+    const now = stamp();
+    D = { as: ME, couple, answers: [], picks: [], room: [], entries: [], photos: {},
+          members: [{ user_id: ME, nickname: "하늘", joined_at: now }, { user_id: YOU, nickname: "바다", joined_at: now }] };
+    const say = (qid, who, answer) => D.answers.push({ question_id: qid, user_id: who, answer, created_at: now });
+    say(todayQ(couple).id, YOU, "이건 진짜 한참 고민했어. 너는 뭐라고 했는지 너무 궁금하다!");
+    say("light-1", YOU, "요즘 출근길에 잔나비 노래만 들어. 가사가 너무 좋아서.");
+    say("light-1", ME, "나는 아이유 신곡 무한 반복 중 😆");
+    say("us-1", YOU, "처음엔 좀 무뚝뚝해 보였는데, 웃는 거 보고 바로 반했어 ㅋㅋ");
+    say("love-1", YOU, "내가 말 안 해도 먼저 알아채 줄 때. 그때 진짜 사랑받는다고 느껴.");
+    say("future-1", YOU, "지금처럼 웃고 있을 것 같아. 강아지 한 마리랑 같이!");
+    const bo = shuffled(BAL, hashStr(couple.id) ^ 0x9E3779B9);
+    bo.slice(0, 6).forEach((b, i) => D.picks.push({ item_id: b.id, user_id: YOU, pick: i % 3 ? "a" : "b", created_at: now }));
+    bo.slice(0, 3).forEach((b, i) => D.picks.push({ item_id: b.id, user_id: ME, pick: i % 2 ? "b" : "a", created_at: now }));
+    const put = (key, x, y) => D.room.push({ id: uuid(), couple_id: couple.id, object_key: key, x, y, scale: 1, flip: false, placed: true, created_at: now });
+    put("window", 72, 42); put("sofa", 47, 88); put("pot", 15, 86);
+    const e1 = { id: uuid(), couple_id: couple.id, user_id: YOU, day: addDays(today(), -2),
+                 memo: "처음 가 본 파스타집 진짜 맛있었다. 다음엔 크림 말고 로제!", photo_path: null, thumb_path: null, created_at: now };
+    const ph = demoPhoto();
+    if (ph) { e1.photo_path = `demo/${e1.id}.jpg`; e1.thumb_path = `demo/${e1.id}_t.jpg`; D.photos[e1.photo_path] = ph.big; D.photos[e1.thumb_path] = ph.small; }
+    D.entries.push(e1);
+    D.entries.push({ id: uuid(), couple_id: couple.id, user_id: ME, day: addDays(today(), -5),
+                     memo: "비 와서 집에서 영화 본 날. 팝콘 다 쏟은 건 비밀 🍿", photo_path: null, thumb_path: null, created_at: now });
+    save();
+  }
+  function demoPhoto() {
+    try {
+      const c = document.createElement("canvas"); c.width = 800; c.height = 600;
+      const g = c.getContext("2d"), gr = g.createLinearGradient(0, 0, 800, 600);
+      gr.addColorStop(0, "#FFD3DC"); gr.addColorStop(1, "#FFE9C9");
+      g.fillStyle = gr; g.fillRect(0, 0, 800, 600);
+      g.font = "220px serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("🍝", 400, 310);
+      const s = document.createElement("canvas"); s.width = 240; s.height = 180;
+      s.getContext("2d").drawImage(c, 0, 0, 240, 180);
+      return { big: c.toDataURL("image/jpeg", 0.8), small: s.toDataURL("image/jpeg", 0.75) };
+    } catch (e) { return null; }
+  }
+  const toDataURL = (b) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(b); });
+
+  return {
+    kind: "demo",
+    async session() { if (!D) await seed(); return { id: D.as, email: D.as === ME ? "하늘@데모" : "바다@데모" }; },
+    async signOut() {},
+    async loadCouple() { return { couple: copy(D.couple), members: copy(D.members) }; },
+    async leaveCouple() { localStorage.removeItem(KEY); D = null; },
+    async updateCouple(patch) { Object.assign(D.couple, patch); save(); },
+    async updateNickname(n) { D.members.find((m) => m.user_id === uid()).nickname = n; save(); },
+    async loadAnswers() { return copy(D.answers); },
+    async loadPicks() { return copy(D.picks); },
+    async loadRoom() { return copy(D.room); },
+    async countEntries() { return D.entries.length; },
+    async loadEntries(from, to) { return copy(D.entries.filter((e) => e.day >= from && e.day <= to)); },
+    async saveAnswer(qid, answer) {
+      const a = D.answers.find((x) => x.question_id === qid && x.user_id === uid());
+      if (a) a.answer = answer; else D.answers.push({ question_id: qid, user_id: uid(), answer, created_at: stamp() });
+      save();
+    },
+    async savePick(item_id, pick) {
+      const p = D.picks.find((x) => x.item_id === item_id && x.user_id === uid());
+      if (p) p.pick = pick; else D.picks.push({ item_id, user_id: uid(), pick, created_at: stamp() });
+      save();
+    },
+    async addEntry({ day, memo: text, photo, thumb }) {
+      const e = { id: uuid(), couple_id: D.couple.id, user_id: uid(), day, memo: text, photo_path: null, thumb_path: null, created_at: stamp() };
+      if (photo) {
+        e.photo_path = `demo/${e.id}.jpg`; e.thumb_path = `demo/${e.id}_t.jpg`;
+        D.photos[e.photo_path] = await toDataURL(photo); D.photos[e.thumb_path] = await toDataURL(thumb);
+      }
+      D.entries.push(e);
+      try { save(); } catch (err) { D.entries.pop(); delete D.photos[e.photo_path]; delete D.photos[e.thumb_path]; throw err; }
+      return copy(e);
+    },
+    async deleteEntry(e) {
+      D.entries = D.entries.filter((x) => x.id !== e.id);
+      delete D.photos[e.photo_path]; delete D.photos[e.thumb_path]; save();
+    },
+    async buyItem(object_key, extra) {
+      const it = { id: uuid(), couple_id: D.couple.id, object_key, x: 50, y: 74, scale: 1, flip: false, placed: false, created_at: stamp(), ...extra };
+      D.room.push(it); save(); return copy(it);
+    },
+    async updateItem(id, patch) { const it = D.room.find((r) => r.id === id); if (it) Object.assign(it, patch); save(); },
+    async urls(paths) { const out = {}; for (const p of paths) if (D.photos[p]) out[p] = D.photos[p]; return out; },
+    subscribe() { return () => {}; },
+    switchUser() { D.as = D.as === ME ? YOU : ME; save(); },
+    reset() { localStorage.removeItem(KEY); D = null; },
+  };
+}
+
+/* =====================================================================
+   불러오기 · 실시간
+   ===================================================================== */
+function setAnswers(rows) {
+  S.answers = {};
+  for (const r of rows) (S.answers[r.question_id] || (S.answers[r.question_id] = {}))[r.user_id] = { answer: r.answer, created_at: r.created_at };
+}
+function setPicks(rows) {
+  S.picks = {};
+  for (const r of rows) (S.picks[r.item_id] || (S.picks[r.item_id] = {}))[r.user_id] = { pick: r.pick, created_at: r.created_at };
+}
+async function loadMonth(ym, force) {
+  if (S.entries[ym] && !force) return;
+  const [y, m] = ym.split("-").map(Number);
+  const rows = await S.api.loadEntries(`${ym}-01`, ymd(new Date(y, m, 0)));
+  S.entries[ym] = rows;
+  const need = rows.map((r) => r.thumb_path).filter((p) => p && !S.urls[p]);
+  if (need.length) Object.assign(S.urls, await S.api.urls(need));
+}
+let urlsAt = 0;       // 사진 주소를 받은 시각. Supabase 주소는 6시간이면 만료된다
+async function loadAll() {
+  const [ans, picks, room, cnt] = await Promise.all([S.api.loadAnswers(), S.api.loadPicks(), S.api.loadRoom(), S.api.countEntries()]);
+  setAnswers(ans); setPicks(picks); S.room = room; S.entryCount = cnt;
+  S.entries = {}; S.urls = {}; urlsAt = Date.now();
+  await loadMonth(S.calMonth, true);
+}
+
+// 상대가 뭔가 바꾸면 해당 데이터만 다시 읽고 화면을 갱신한다 (잠깐 모았다가 한 번에)
+const pending = new Set();
+let flushTimer = null;
+function onRemote(table) { pending.add(table); clearTimeout(flushTimer); flushTimer = setTimeout(flushRemote, 350); }
+async function flushRemote() {
+  if (!S.couple) return;
+  const ts = [...pending]; pending.clear();
+  try {
+    if (ts.includes("couples") || ts.includes("couple_members")) {
+      const c = await S.api.loadCouple();
+      if (!c) return location.reload();       // 커플에서 빠졌다
+      S.couple = c.couple; S.members = c.members;
+    }
+    if (ts.includes("answers")) setAnswers(await S.api.loadAnswers());
+    if (ts.includes("balance_picks")) setPicks(await S.api.loadPicks());
+    if (ts.includes("room_items") && !S.dragging) S.room = await S.api.loadRoom();
+    if (ts.includes("entries")) {
+      if (Date.now() - urlsAt > 5 * 3600e3) { S.urls = {}; urlsAt = Date.now(); }   // 만료되기 전에 새로 받는다
+      S.entryCount = await S.api.countEntries();
+      for (const ym of Object.keys(S.entries)) await loadMonth(ym, true);
+    }
+  } catch (e) { console.warn(e); return; }
+  if (!S.dragging) { renderTab(); sheetRefresh(); }
+}
+
+/* =====================================================================
+   시트 (아래에서 올라오는 창)
+   ===================================================================== */
+let sheetDraw = null, sheetOpts = {};
+let skipPop = 0;      // 우리가 직접 부른 history.back()의 popstate는 한 박자 늦게 오므로 그만큼 무시한다
+function openSheet(draw, opts) {
+  const fresh = !sheetDraw;
+  sheetDraw = draw; sheetOpts = opts || {};
+  const s = $("#sheet");
+  s.classList.remove("hide");
+  s.querySelector(".panel").scrollTop = 0;
+  drawSheet();
+  requestAnimationFrame(() => s.classList.add("open"));
+  if (fresh) history.pushState({ sheet: true }, "");    // 안드로이드 뒤로 가기로 닫히게
+}
+function drawSheet() {
+  if (!sheetDraw) return;
+  $("#sheetBody").replaceChildren(...[sheetDraw()].flat(Infinity).filter(Boolean));
+}
+function sheetRefresh() {
+  if (!sheetDraw || S.dragging) return;
+  const a = document.activeElement;
+  if (a && $("#sheetBody").contains(a) && (a.tagName === "TEXTAREA" || a.tagName === "INPUT")) return;   // 쓰는 중이면 그대로 둔다
+  drawSheet();
+}
+function closeSheet(fromPop) {
+  if (!sheetDraw) return;
+  const s = $("#sheet"), onClose = sheetOpts.onClose;
+  sheetDraw = null; sheetOpts = {};
+  s.classList.remove("open");
+  setTimeout(() => { if (!sheetDraw) { s.classList.add("hide"); $("#sheetBody").replaceChildren(); } }, 260);
+  if (onClose) onClose();
+  if (!fromPop && history.state && history.state.sheet) { skipPop++; history.back(); }
+}
+window.addEventListener("popstate", () => {
+  if (skipPop > 0) { skipPop--; return; }      // 방금 닫은 시트의 뒤로 가기 — 새로 연 시트를 닫으면 안 된다
+  closeSheet(true);
+});
+$("#sheet .dim").addEventListener("click", () => closeSheet());
+$("#sheet .x").addEventListener("click", () => closeSheet());
+
+/* =====================================================================
+   공용 조각
+   ===================================================================== */
+function errMsg(e) {
+  const m = String((e && (e.message || e.error_description)) || e || "");
+  if (/Invalid login credentials/i.test(m)) return "이메일이나 비밀번호가 맞지 않아요";
+  if (/already registered|already been registered|already exists/i.test(m)) return "이미 가입된 이메일이에요";
+  if (/at least 6/i.test(m)) return "비밀번호는 6자 이상이어야 해요";
+  if (/Email not confirmed/i.test(m)) return "메일함에서 가입 확인 링크를 먼저 눌러 주세요";
+  if (/rate limit|too many/i.test(m)) return "요청이 너무 많아요. 잠시 후 다시 해 주세요";
+  if (/code_not_found/.test(m)) return "초대 코드를 찾을 수 없어요";
+  if (/couple_full/.test(m)) return "이미 두 사람이 연결된 코드예요";
+  if (/already_in_couple/.test(m)) return "이미 연결된 커플이 있어요";
+  if (/does not exist|schema cache|Could not find the/i.test(m)) return "Supabase에 setup.sql을 먼저 실행해 주세요";
+  if (/Failed to fetch|NetworkError|network|Load failed/i.test(m)) return "인터넷 연결을 확인해 주세요";
+  if (/demo_quota/.test(m)) return "데모에서는 사진을 몇 장만 저장할 수 있어요";
+  return "문제가 생겼어요. 잠시 후 다시 해 주세요";
+}
+const segBtn = (label, on, fn) => h("button", { class: on ? "on" : "", type: "button", onclick: fn }, label);
+const hero = (title, sub) => h("div", { class: "hero" }, h("div", { class: "logo-mark" }, "💞"), h("div", { class: "logo" }, title), h("p", { class: "sub" }, sub));
+const col = (gap) => ({ display: "flex", flexDirection: "column", gap: (gap || 10) + "px" });
+function noTabs() { $("#tabs").classList.add("hide"); $("#app").classList.add("no-tabs"); }
+
+function inviteCard() {
+  const code = S.couple.invite_code;
+  const text = `둘이서에서 같이 기록하자 💞\n초대 코드: ${code}\n${location.origin + location.pathname}`;
+  const was = (S.couple.member_ids || []).length >= 2;     // 둘이 연결됐다가 상대가 나간 상태
+  return h("div", { class: "card center", style: col(8) },
+    h("div", { class: "h2" }, was ? "상대가 연결을 끊었어요" : "상대를 초대해 주세요"),
+    h("p", { class: "sub" }, was ? "나갔던 사람만 이 코드로 다시 들어올 수 있어요. 새로 시작하려면 ‘우리’ 탭에서 연결을 끊고 새로 만들어 주세요"
+                                 : "상대가 가입하고 ‘초대 코드 있어요’에 이 코드를 넣으면 연결돼요"),
+    h("div", { class: "code" }, code),
+    h("div", { class: "row", style: { justifyContent: "center" } },
+      h("button", { class: "btn sm soft", onclick: async () => {
+        try { await navigator.clipboard.writeText(code); toast("코드를 복사했어요"); } catch (e) { toast(`초대 코드: ${code}`); }
+      } }, "코드 복사"),
+      navigator.share ? h("button", { class: "btn sm", onclick: () => navigator.share({ title: "둘이서", text }).catch(() => {}) }, "공유하기") : null));
+}
+
+// 사진 줄이기 (긴 변 max px, JPEG). 아이폰 HEIC는 사진 선택 시 JPEG로 바뀌어 들어온다.
+async function shrink(file, max, quality) {
+  let src;
+  try { src = await createImageBitmap(file, { imageOrientation: "from-image" }); }
+  catch (e) {
+    src = await new Promise((res, rej) => {
+      const url = URL.createObjectURL(file), img = new Image();
+      img.onload = () => { URL.revokeObjectURL(url); res(img); };
+      img.onerror = () => { URL.revokeObjectURL(url); rej(new Error("image_load")); };
+      img.src = url;
+    });
+  }
+  const w = src.width, ht = src.height, k = Math.min(1, max / Math.max(w, ht));
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(ht * k));
+  const g = c.getContext("2d");
+  g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height);
+  g.drawImage(src, 0, 0, c.width, c.height);
+  return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error("encode"))), "image/jpeg", quality));
+}
+
+/* =====================================================================
+   시작 화면들
+   ===================================================================== */
+function renderSetup() {
+  noTabs();
+  view(
+    hero("둘이서", "둘이 같이 쓰는 기록 · 질문 · 밸런스 게임"),
+    h("div", { class: "card", style: col(6) },
+      h("div", { class: "h2" }, "아직 서버 연결 전이에요"),
+      h("p", { class: "sub" }, "README의 ‘처음 설정하기’대로 Supabase를 만들고 config.js에 주소와 키를 넣으면, 두 사람 폰이 같은 데이터를 보게 돼요.")),
+    h("button", { class: "btn wide", onclick: () => { localStorage.setItem(MODE_KEY, "demo"); location.reload(); } }, "데모로 먼저 둘러보기"),
+    h("p", { class: "tiny center" }, "데모는 이 폰에만 저장되고, 상대 입장으로 바꿔 볼 수도 있어요"),
+  );
+}
+
+function renderAuth(mode) {
+  noTabs();
+  const up = mode === "up";
+  const email = h("input", { class: "input", type: "email", placeholder: "이메일", autocomplete: "email", inputmode: "email" });
+  const pw = h("input", { class: "input", type: "password", placeholder: up ? "비밀번호 (6자 이상)" : "비밀번호",
+                          autocomplete: up ? "new-password" : "current-password" });
+  const btn = h("button", { class: "btn wide", type: "submit" }, up ? "가입하기" : "로그인");
+  const form = h("form", { class: "card", style: col(), onsubmit: async (e) => {
+    e.preventDefault();
+    const em = email.value.trim();
+    if (!em || pw.value.length < 6) return toast("이메일과 6자 이상 비밀번호를 넣어 주세요");
+    btn.disabled = true;
+    try {
+      const u = up ? await S.api.signUp(em, pw.value) : await S.api.signIn(em, pw.value);
+      if (!u) {   // 메일 확인이 켜져 있는 경우
+        return view(hero("둘이서", ""),
+          h("div", { class: "card center", style: col(6) }, h("div", { class: "h2" }, "메일함을 확인해 주세요"),
+            h("p", { class: "sub" }, `${em}(으)로 보낸 확인 링크를 누른 다음 로그인하면 돼요.`)),
+          h("button", { class: "btn wide", onclick: () => renderAuth("in") }, "로그인하러 가기"));
+      }
+      S.user = u;
+      await afterLogin();
+    } catch (err) { toast(errMsg(err)); btn.disabled = false; }
+  } }, email, pw, btn);
+  view(
+    hero("둘이서", "둘이 같이 쓰는 우리만의 공간"),
+    h("div", { class: "seg" }, segBtn("로그인", !up, () => renderAuth("in")), segBtn("처음이에요", up, () => renderAuth("up"))),
+    form,
+    h("p", { class: "tiny center" }, up ? "둘 다 각자 가입한 뒤, 한 사람이 만든 초대 코드로 연결해요" : "가입할 때 쓴 이메일로 로그인해요"),
+  );
+}
+
+function renderCoupleSetup(mode) {
+  noTabs();
+  const isNew = mode !== "join";
+  const name = h("input", { class: "input", placeholder: "상대에게 보일 내 이름", maxlength: 10 });
+  const start = h("input", { class: "input", type: "date", max: today() });
+  const code = h("input", { class: "input", placeholder: "6자리 코드", maxlength: 6, autocapitalize: "characters", autocomplete: "off",
+                            style: { textTransform: "uppercase", letterSpacing: ".25em", textAlign: "center" } });
+  const btn = h("button", { class: "btn wide", type: "submit" }, isNew ? "우리 공간 만들기" : "연결하기");
+  const form = h("form", { class: "card", style: col(12), onsubmit: async (e) => {
+    e.preventDefault();
+    const n = name.value.trim();
+    if (!n) return toast("내 이름을 넣어 주세요");
+    btn.disabled = true;
+    try {
+      if (isNew) await S.api.createCouple(n, start.value || null);
+      else {
+        const c = code.value.trim().toUpperCase();
+        if (c.length !== 6) { btn.disabled = false; return toast("초대 코드 6자리를 넣어 주세요"); }
+        await S.api.joinCouple(c, n);
+      }
+      await afterLogin();
+    } catch (err) { toast(errMsg(err)); btn.disabled = false; }
+  } },
+    h("div", { class: "field" }, h("label", {}, "내 이름"), name),
+    isNew ? h("div", { class: "field" }, h("label", {}, "사귄 날 (나중에 정해도 돼요)"), start)
+          : h("div", { class: "field" }, h("label", {}, "상대가 보내 준 초대 코드"), code),
+    btn);
+  view(
+    hero("둘이서", "먼저 우리 둘을 연결해요"),
+    h("div", { class: "seg" }, segBtn("새로 시작하기", isNew, () => renderCoupleSetup("new")), segBtn("초대 코드 있어요", !isNew, () => renderCoupleSetup("join"))),
+    form,
+    h("p", { class: "tiny center" }, isNew ? "만들고 나면 초대 코드가 나와요. 상대에게 보내 주세요" : "상대가 ‘새로 시작하기’로 만든 코드를 넣어요"),
+    h("button", { class: "btn ghost", onclick: logout }, "로그아웃"),
+  );
+}
+
+function renderError(err) {
+  console.error(err);
+  noTabs();
+  view(hero("둘이서", ""),
+    h("div", { class: "card center", style: col(6) }, h("div", { class: "h2" }, "불러오지 못했어요"), h("p", { class: "sub" }, errMsg(err))),
+    h("button", { class: "btn wide", onclick: () => location.reload() }, "다시 시도"),
+    h("button", { class: "btn ghost", onclick: logout }, "로그아웃"));
+}
+
+/* =====================================================================
+   메인 · 탭
+   ===================================================================== */
+const TABS = [["home", "홈"], ["cal", "캘린더"], ["q", "질문"], ["bal", "밸런스"], ["us", "우리"]];
+function showMain() {
+  $("#app").classList.remove("no-tabs");
+  const nav = $("#tabs");
+  nav.classList.remove("hide");
+  nav.querySelector(".in").replaceChildren(...TABS.map(([id, label]) =>
+    h("button", { "data-tab": id, "aria-label": label, onclick: () => go(id) }, icon(id), h("span", {}, label))));
+  renderTab();
+}
+function go(tab) {
+  if (tab === S.tab && tab === "q" && S.qCat) S.qCat = null;    // 질문 탭을 다시 누르면 목록 처음으로
+  S.tab = tab;
+  if (tab !== "q") S.qCat = null;
+  renderTab();
+  window.scrollTo(0, 0);
+}
+function renderTab() {
+  if (!S.couple) return;
+  for (const b of $("#tabs .in").children) {
+    b.classList.toggle("on", b.dataset.tab === S.tab);
+    const need = (b.dataset.tab === "q" && waitingQs().length > 0) || (b.dataset.tab === "bal" && waitingPicks().length > 0);
+    const dot = b.querySelector(".dot");
+    if (need && !dot) b.append(h("i", { class: "dot" }));
+    if (!need && dot) dot.remove();
+  }
+  ({ home: renderHome, cal: renderCal, q: renderQ, bal: renderBal, us: renderUs })[S.tab]();
+}
+
+/* ---------------- 홈 ---------------- */
+function demoBanner() {
+  return h("div", { class: "banner" }, `데모 모드 · 지금은 ${josa(nick(me()), "의")} 화면이에요. ‘우리’ 탭에서 상대 입장으로 바꿔 볼 수 있어요`);
+}
+function qCard(q, label) {
+  const p = pid(), mine = ansOf(q.id, me()), theirs = ansOf(q.id, p);
+  const st = mine && theirs ? h("span", { class: "chip mint" }, "둘 다 답했어요 · 열어 보기")
+    : mine ? h("span", { class: "chip gray" }, p ? josa(nick(p), "를 기다리는 중") : "상대를 기다리는 중")
+    : theirs ? h("span", { class: "chip" }, josa(nick(p), "가 먼저 답했어요"))
+    : h("span", { class: "chip gray" }, "아직 아무도 답하지 않았어요");
+  return h("button", { class: "qcard", onclick: () => openQuestion(q.id) },
+    h("div", { class: "row" }, h("span", { class: "chip sky" }, label), h("span", { class: "tiny" }, `${CAT[q.cat].ic} ${CAT[q.cat].name}`)),
+    h("div", { class: "qt" }, q.text),
+    h("div", { class: "qstat" }, st));
+}
+function renderHome() {
+  const p = partner(), sd = S.couple.start_date;
+  let dday = null;
+  if (sd) { const n = daysBetween(sd, today()); dday = n >= 0 ? `D+${n + 1}` : `D${n}`; }
+  const parts = [
+    h("div", { class: "home-head" },
+      h("div", { class: "names" }, nick(me()), h("span", { class: "hrt" }, "♥"), p ? nick(p.user_id) : h("span", { class: "sub" }, "기다리는 중")),
+      sd ? h("div", { class: "dday" }, dday, h("small", {}, `${fmtShort(sd)}부터`))
+         : h("button", { class: "link", onclick: () => go("us") }, "사귄 날 정하기")),
+  ];
+  if (S.api.kind === "demo") parts.push(demoBanner());
+  if (!p) parts.push(inviteCard());
+  parts.push(roomEl(false));
+  parts.push(h("div", { class: "room-bar" }, h("span", { class: "hearts" }, `♥ ${Math.max(0, hearts())}`),
+    h("button", { class: "btn sm soft", onclick: openRoomEditor }, "🛋️ 방 꾸미기")));
+  parts.push(qCard(todayQ(), "오늘의 질문"));
+  const na = nextAnniv();
+  if (na) parts.push(h("div", { class: "card anniv" }, h("div", { class: "big" }, na.in === 0 ? "오늘!" : `D-${na.in}`),
+    h("div", {}, h("div", { class: "h2" }, `${na.label} 기념일`), h("div", { class: "sub" }, fmtDate(na.date)))));
+  view(...parts);
+}
+
+/* ---------------- 우리 방 ---------------- */
+function roomEl(editing) {
+  const wall = WALL[S.couple.wall] || DATA.walls[0], floor = FLOOR[S.couple.floor] || DATA.floors[0];
+  const room = h("div", { class: "room" + (editing ? " editing" : "") },
+    h("div", { class: "wall", style: { background: wall.css } }),
+    h("div", { class: "floor", style: { background: floor.css } }));
+  const items = S.room.filter((r) => r.placed && OBJ[r.object_key]);
+  if (!items.length && !editing) room.append(h("div", { class: "room-empty", style: { whiteSpace: "pre-line" } }, "아직 텅 빈 우리 방\n하트를 모아 소품을 들여 보세요"));
+  for (const it of items) room.append(objEl(it, editing));
+  if (editing) room.addEventListener("pointerdown", (e) => {
+    if (!e.target.classList.contains("obj") && S.sel) { S.sel = null; drawSheet(); }
+  });
+  return room;
+}
+function objEl(it, editing) {
+  const o = OBJ[it.object_key];
+  const el = h("div", { class: "obj" + (editing && S.sel === it.id ? " sel" : ""), "data-id": it.id, role: editing ? "button" : null, "aria-label": o.name }, o.e);
+  el.style.left = it.x + "%";
+  el.style.top = it.y + "%";
+  el.style.zIndex = String(Math.round(it.y * 10));        // 아래(앞)에 있을수록 위에 그린다
+  el.style.setProperty("--s", String((o.s || 1) * (it.scale || 1)));
+  el.style.setProperty("--f", it.flip ? "-1" : "1");
+  if (editing) dragify(el, it);
+  return el;
+}
+function dragify(el, it) {
+  el.addEventListener("pointerdown", (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const room = el.parentElement, r = room.getBoundingClientRect();
+    const sx = e.clientX, sy = e.clientY, ox = it.x, oy = it.y;
+    let moved = false;
+    if (S.sel !== it.id) {
+      S.sel = it.id;
+      room.querySelectorAll(".obj.sel").forEach((x) => x.classList.remove("sel"));
+      el.classList.add("sel");
+    }
+    S.dragging = true;
+    try { el.setPointerCapture(e.pointerId); } catch (err) { /* 무시 */ }
+    const move = (ev) => {
+      const dx = (ev.clientX - sx) / r.width * 100, dy = (ev.clientY - sy) / r.height * 100;
+      if (Math.abs(dx) + Math.abs(dy) > 0.6) moved = true;
+      it.x = clamp(ox + dx, 3, 97); it.y = clamp(oy + dy, 10, 100);
+      el.style.left = it.x + "%"; el.style.top = it.y + "%"; el.style.zIndex = String(Math.round(it.y * 10));
+    };
+    const up = () => {
+      el.removeEventListener("pointermove", move); el.removeEventListener("pointerup", up); el.removeEventListener("pointercancel", up);
+      S.dragging = false;
+      if (moved) S.api.updateItem(it.id, { x: it.x, y: it.y }).catch((err) => toast(errMsg(err)));
+      drawSheet();
+    };
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);
+  });
+}
+function openRoomEditor() {
+  S.editing = true; S.sel = null;
+  openSheet(drawEditor, { onClose: () => { S.editing = false; S.sel = null; renderTab(); } });
+}
+function adjust(it, patch) {
+  Object.assign(it, patch);
+  drawSheet();
+  S.api.updateItem(it.id, patch).catch((err) => toast(errMsg(err)));
+}
+function drawEditor() {
+  const sel = S.room.find((r) => r.id === S.sel && r.placed);
+  const tools = h("div", { class: "tools" }, sel ? [
+    h("button", { class: "btn sm line", onclick: () => adjust(sel, { scale: +clamp((sel.scale || 1) - 0.15, 0.5, 2.2).toFixed(2) }) }, "작게"),
+    h("button", { class: "btn sm line", onclick: () => adjust(sel, { scale: +clamp((sel.scale || 1) + 0.15, 0.5, 2.2).toFixed(2) }) }, "크게"),
+    h("button", { class: "btn sm line", onclick: () => adjust(sel, { flip: !sel.flip }) }, "뒤집기"),
+    h("button", { class: "btn sm soft", onclick: () => { S.sel = null; adjust(sel, { placed: false }); } }, "보관함에 넣기"),
+  ] : h("span", { class: "tiny", style: { alignSelf: "center" } }, "소품을 눌러 고르고, 끌어서 옮겨요"));
+  const tabs = [["shop", "상점"], ["box", "보관함"], ["theme", "벽지·바닥"]];
+  return [
+    h("div", { class: "row" }, h("div", { class: "h2 grow" }, "우리 방 꾸미기"), h("span", { class: "hearts" }, `♥ ${Math.max(0, hearts())}`)),
+    roomEl(true),
+    tools,
+    h("div", { class: "seg" }, tabs.map(([k, l]) => segBtn(l, S.shopTab === k, () => { S.shopTab = k; drawSheet(); }))),
+    S.shopTab === "shop" ? shopGrid() : S.shopTab === "box" ? boxGrid() : themeGrid(),
+  ];
+}
+function shopGrid() {
+  return Object.entries(DATA.objCats).map(([cat, name]) => [
+    h("div", { class: "sec" }, name),
+    h("div", { class: "shop" }, DATA.objects.filter((o) => o.cat === cat).map((o) => {
+      const owned = S.room.filter((r) => r.object_key === o.key).length;
+      return h("button", { class: owned ? "own" : "", onclick: () => buy(o) },
+        h("span", { class: "e" }, o.e), h("span", {}, o.name), h("span", { class: "p" }, `♥${o.price}`),
+        owned ? h("span", { class: "tiny" }, `${owned}개 있음`) : null);
+    })),
+  ]);
+}
+async function buy(o) {
+  const left = hearts();
+  if (left < o.price) return toast(`하트가 ${o.price - left}개 모자라요`);
+  let it;
+  try { it = await S.api.buyItem(o.key, { placed: true, x: 50, y: 76 }); } catch (err) { return toast(errMsg(err)); }
+  S.room.push(it); S.sel = it.id;
+  drawSheet();
+  toast(`${o.e} ${josa(o.name, "를 들였어요")} (♥−${o.price})`);
+}
+function boxGrid() {
+  const box = S.room.filter((r) => !r.placed && OBJ[r.object_key]);
+  if (!box.length) return h("p", { class: "empty" }, "보관함이 비었어요. 방에서 소품을 골라 ‘보관함에 넣기’를 누르면 여기로 와요");
+  return h("div", { class: "shop" }, box.map((r) => {
+    const o = OBJ[r.object_key];
+    return h("button", { onclick: () => { S.sel = r.id; adjust(r, { placed: true, x: 50, y: 76 }); } },
+      h("span", { class: "e" }, o.e), h("span", {}, o.name), h("span", { class: "tiny" }, "꺼내기"));
+  }));
+}
+function themeGrid() {
+  const block = (title, list, kind) => [
+    h("div", { class: "sec" }, title),
+    h("div", { class: "shop" }, list.map((t) => {
+      const owned = t.price === 0 || S.room.some((r) => r.object_key === `${kind}:${t.key}`);
+      const on = (S.couple[kind] || list[0].key) === t.key;
+      return h("button", { class: on ? "own" : "", onclick: () => setTheme(kind, t, owned) },
+        h("span", { class: "swatch", style: { background: t.css } }), h("span", {}, t.name),
+        on ? h("span", { class: "tiny" }, "사용 중") : owned ? h("span", { class: "tiny" }, "바꾸기") : h("span", { class: "p" }, `♥${t.price}`));
+    })),
+  ];
+  return [block("벽지", DATA.walls, "wall"), block("바닥", DATA.floors, "floor")];
+}
+async function setTheme(kind, t, owned) {
+  if (!owned) {
+    const left = hearts();
+    if (left < t.price) return toast(`하트가 ${t.price - left}개 모자라요`);
+    try { S.room.push(await S.api.buyItem(`${kind}:${t.key}`, { placed: false })); } catch (err) { return toast(errMsg(err)); }
+  }
+  S.couple[kind] = t.key;
+  drawSheet();
+  try { await S.api.updateCouple({ [kind]: t.key }); } catch (err) { toast(errMsg(err)); }
+}
+
+/* ---------------- 캘린더 ---------------- */
+async function renderCal() {
+  const ym = S.calMonth;
+  if (!S.entries[ym]) {
+    view(h("div", { class: "spin" }));
+    try { await loadMonth(ym); } catch (err) { toast(errMsg(err)); S.entries[ym] = []; }
+    if (S.tab !== "cal" || S.calMonth !== ym) return;
+  }
+  const [y, m] = ym.split("-").map(Number);
+  const first = new Date(y, m - 1, 1).getDay(), days = new Date(y, m, 0).getDate();
+  const rows = S.entries[ym] || [], byDay = {};
+  for (const e of rows) (byDay[e.day] || (byDay[e.day] = [])).push(e);
+  const t = today(), cells = [];
+  for (let i = 0; i < first; i++) cells.push(h("div", { class: "day blank" }));
+  for (let d = 1; d <= days; d++) {
+    const ds = `${ym}-${pad(d)}`, list = byDay[ds] || [];
+    const ph = list.find((e) => e.thumb_path && S.urls[e.thumb_path]);
+    const lab = annivLabel(ds);
+    const cell = h("button", { class: "day" + (ph ? " photo" : "") + (ds === t ? " today" : ""), "aria-label": fmtDate(ds), onclick: () => openDay(ds) },
+      h("span", { class: "n" }, d), list.length && !ph ? h("i", { class: "memo" }) : null, lab ? h("span", { class: "lab" }, lab) : null);
+    if (ph) cell.style.backgroundImage = `url("${S.urls[ph.thumb_path]}")`;
+    cells.push(cell);
+  }
+  const photos = rows.filter((e) => e.photo_path).length;
+  view(
+    h("div", { class: "cal-head" },
+      h("button", { class: "navbtn", "aria-label": "이전 달", onclick: () => moveMonth(-1) }, "‹"),
+      h("div", { class: "h2" }, `${y}년 ${m}월`),
+      h("button", { class: "navbtn", "aria-label": "다음 달", onclick: () => moveMonth(1) }, "›")),
+    h("div", { class: "week" }, WEEK.map((w) => h("div", {}, w))),
+    h("div", { class: "cal" }, cells),
+    h("p", { class: "sub center" }, rows.length ? `이번 달 기록 ${rows.length}개 · 사진 ${photos}장` : "날짜를 눌러 그날을 남겨 보세요"),
+    h("button", { class: "btn wide soft", onclick: () => openDay(t) }, "✏️ 오늘 기록하기"),
+  );
+}
+function moveMonth(n) {
+  const [y, m] = S.calMonth.split("-").map(Number);
+  const d = new Date(y, m - 1 + n, 1);
+  S.calMonth = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+  renderCal();
+}
+const dayEntries = (ds) => (S.entries[ds.slice(0, 7)] || []).filter((e) => e.day === ds);
+async function ensureUrls(paths) {
+  const need = paths.filter((p) => p && !S.urls[p]);
+  if (!need.length) return;
+  try { Object.assign(S.urls, await S.api.urls(need)); sheetRefresh(); } catch (e) { console.warn(e); }
+}
+async function openDay(ds) {
+  S.dayForm = { photo: null, preview: null, memo: "" };
+  openSheet(() => drawDay(ds), { onClose: () => { if (S.dayForm && S.dayForm.preview) URL.revokeObjectURL(S.dayForm.preview); S.dayForm = null; } });
+  if (!S.entries[ds.slice(0, 7)]) { try { await loadMonth(ds.slice(0, 7)); sheetRefresh(); } catch (e) { console.warn(e); } }
+  ensureUrls(dayEntries(ds).map((e) => e.photo_path));
+}
+function drawDay(ds) {
+  const list = dayEntries(ds), lab = annivLabel(ds);
+  const n = S.couple.start_date ? daysBetween(S.couple.start_date, ds) + 1 : 0;
+  return [
+    h("div", {}, h("div", { class: "h2" }, fmtDate(ds)),
+      h("div", { class: "row", style: { marginTop: "4px" } }, lab ? h("span", { class: "chip" }, `${lab} ♥`) : null, n > 0 ? h("span", { class: "tiny" }, `우리 ${n}일째`) : null)),
+    list.length ? h("div", {}, list.map(entryEl)) : h("p", { class: "empty" }, "아직 이날의 기록이 없어요"),
+    entryForm(ds),
+  ];
+}
+function entryEl(e) {
+  const mine = e.user_id === me();
+  const src = S.urls[e.photo_path] || S.urls[e.thumb_path];
+  return h("div", { class: "entry" },
+    e.photo_path ? h("img", { src: src || null, alt: "", loading: "lazy" }) : null,
+    e.memo ? h("div", { class: "memo-t" }, e.memo) : null,
+    h("div", { class: "row tiny" }, h("span", { class: "grow" }, `${nick(e.user_id)} · ${fmtTime(e.created_at)}`),
+      mine ? h("button", { class: "link", onclick: () => delEntry(e) }, "지우기") : null));
+}
+function entryForm(ds) {
+  const F = S.dayForm;
+  const file = h("input", { type: "file", accept: "image/*", class: "hide", onchange: () => {
+    const f = file.files[0];
+    if (!f) return;
+    if (F.preview) URL.revokeObjectURL(F.preview);
+    F.photo = f; F.preview = URL.createObjectURL(f);
+    drawSheet();
+  } });
+  const memoBox = h("textarea", { class: "textarea", placeholder: "이날 어땠어?", maxlength: 1000, oninput: () => { F.memo = memoBox.value; } });
+  memoBox.value = F.memo;
+  const save = h("button", { class: "btn wide", onclick: async () => {
+    if (!F.photo && !F.memo.trim()) return toast("사진이나 메모를 남겨 주세요");
+    save.disabled = true;
+    save.textContent = F.photo ? "사진 올리는 중…" : "저장하는 중…";
+    try {
+      let photo = null, thumb = null;
+      if (F.photo) {
+        photo = await shrink(F.photo, S.api.kind === "demo" ? 900 : 1600, 0.82);
+        thumb = await shrink(F.photo, 360, 0.72);
+      }
+      const e = await S.api.addEntry({ day: ds, memo: F.memo.trim(), photo, thumb });
+      const ym = ds.slice(0, 7);
+      if (S.entries[ym]) S.entries[ym].push(e);
+      S.entryCount++;
+      if (photo) { S.urls[e.photo_path] = URL.createObjectURL(photo); S.urls[e.thumb_path] = URL.createObjectURL(thumb); }
+      if (F.preview) URL.revokeObjectURL(F.preview);
+      F.photo = null; F.preview = null; F.memo = "";
+      toast(`기록했어요 · ♥+${H.entry}`);
+      drawSheet(); renderTab();
+    } catch (err) {
+      toast(errMsg(err)); save.disabled = false; save.textContent = "기록하기";
+    }
+  } }, "기록하기");
+  return h("div", { class: "card", style: col() },
+    h("div", { class: "sec", style: { margin: 0 } }, "기록 남기기"),
+    h("div", { class: "pick-photo" },
+      F.preview ? h("img", { class: "preview", src: F.preview, alt: "" }) : null,
+      h("button", { class: "btn sm line", onclick: () => file.click() }, F.preview ? "사진 바꾸기" : "📷 사진 고르기"),
+      F.preview ? h("button", { class: "link", onclick: () => { URL.revokeObjectURL(F.preview); F.photo = null; F.preview = null; drawSheet(); } }, "빼기") : null,
+      file),
+    memoBox, save);
+}
+async function delEntry(e) {
+  if (!confirm("이 기록을 지울까요?")) return;
+  try { await S.api.deleteEntry(e); } catch (err) { return toast(errMsg(err)); }
+  const ym = e.day.slice(0, 7);
+  if (S.entries[ym]) S.entries[ym] = S.entries[ym].filter((x) => x.id !== e.id);
+  S.entryCount = Math.max(0, S.entryCount - 1);
+  drawSheet(); renderTab();
+}
+
+/* ---------------- 질문 ---------------- */
+function qItem(q) {
+  const mine = ansOf(q.id, me()), theirs = ansOf(q.id, pid());
+  const st = mine && theirs ? "💞" : mine ? "⏳" : theirs ? "🔒" : "○";
+  return h("button", { class: "qitem", onclick: () => openQuestion(q.id) }, h("span", { class: "st" }, st), h("span", { class: "t" }, q.text));
+}
+const lastAt = (qid) => Object.values(S.answers[qid] || {}).reduce((a, x) => (x.created_at > a ? x.created_at : a), "");
+function renderQ() {
+  if (S.qCat) return renderQCat(S.qCat);
+  const both = Q.filter((q) => bothAnswered(q.id)).sort((a, b) => (lastAt(a.id) < lastAt(b.id) ? 1 : -1));
+  const tq = todayQ();
+  const wait = waitingQs().filter((q) => q !== tq);      // 오늘의 질문은 바로 위 카드에 있으니 빼고
+  const parts = [h("div", { class: "title" }, "질문"), qCard(tq, "오늘의 질문")];
+  if (wait.length) parts.push(h("div", { class: "sec" }, `${josa(nick(pid()), "가")} 먼저 답한 질문 · ${wait.length}개`), h("div", { class: "qlist" }, wait.slice(0, 5).map(qItem)));
+  parts.push(h("div", { class: "sec" }, "카테고리"), h("div", { class: "cats" }, DATA.categories.map((c) => {
+    const qs = Q.filter((q) => q.cat === c.id), done = qs.filter((q) => bothAnswered(q.id)).length;
+    return h("button", { class: "cat", onclick: () => { S.qCat = c.id; renderTab(); window.scrollTo(0, 0); } },
+      h("span", { class: "ic" }, c.ic), h("span", { class: "nm" }, c.name), h("span", { class: "tiny" }, c.desc),
+      h("div", { class: "bar" }, h("i", { style: { width: `${Math.round(done / qs.length * 100)}%` } })),
+      h("span", { class: "tiny" }, `${done} / ${qs.length}`));
+  })));
+  parts.push(h("div", { class: "sec" }, `우리의 대화 · ${both.length}개`),
+    both.length ? h("div", { class: "qlist" }, both.slice(0, 10).map(qItem)) : h("p", { class: "empty" }, "둘 다 답한 질문이 여기에 쌓여요"));
+  view(...parts);
+}
+function renderQCat(id) {
+  const c = CAT[id], qs = Q.filter((q) => q.cat === id);
+  view(
+    h("div", { class: "row" }, h("button", { class: "navbtn", "aria-label": "뒤로", onclick: () => { S.qCat = null; renderTab(); } }, "‹"),
+      h("div", { class: "title grow" }, `${c.ic} ${c.name}`)),
+    h("p", { class: "sub" }, c.desc),
+    h("p", { class: "tiny" }, "💞 둘 다 답함 · 🔒 상대가 먼저 답함 · ⏳ 상대 기다림 · ○ 아직"),
+    h("div", { class: "qlist" }, qs.map(qItem)),
+  );
+}
+function openQuestion(qid) {
+  S.qEdit = false;
+  openSheet(() => drawQuestion(qid), { onClose: () => { S.qEdit = false; } });
+}
+function ansEl(uid, a, them) {
+  return h("div", { class: "ans" + (them ? " them" : "") },
+    h("span", { class: "who" }, nick(uid) + (uid === me() ? " (나)" : "")), h("div", { class: "txt" }, a.answer));
+}
+function drawQuestion(qid) {
+  const q = QMAP[qid], c = CAT[q.cat], p = pid();
+  const mine = ansOf(qid, me()), theirs = ansOf(qid, p);
+  const out = [h("span", { class: "chip sky", style: { alignSelf: "flex-start" } }, `${c.ic} ${c.name}`), h("div", { class: "q-big" }, q.text)];
+  if (mine && !S.qEdit) out.push(ansEl(me(), mine, false),
+    h("button", { class: "link", style: { alignSelf: "flex-end" }, onclick: () => { S.qEdit = true; drawSheet(); } }, "내 답 고치기"));
+  else out.push(answerForm(qid, mine ? mine.answer : ""));
+  if (!p) out.push(h("div", { class: "lock" }, "상대가 들어오면 서로의 답을 볼 수 있어요"));
+  else if (theirs && mine) out.push(ansEl(p, theirs, true));
+  else if (theirs) out.push(h("div", { class: "lock" }, `🔒 ${josa(nick(p), "가 답했어요")}`, h("br"), "내 답을 쓰면 열려요"));
+  else out.push(h("div", { class: "lock" }, `${nick(p)}의 답을 기다리는 중…`));
+  return out;
+}
+function answerForm(qid, init) {
+  const ta = h("textarea", { class: "textarea", placeholder: "내 생각을 적어 줘", maxlength: 500 });
+  ta.value = init;
+  const btn = h("button", { class: "btn wide", onclick: async () => {
+    const v = ta.value.trim();
+    if (!v) return toast("답을 적어 주세요");
+    btn.disabled = true;
+    const first = !ansOf(qid, me());
+    try { await S.api.saveAnswer(qid, v); } catch (err) { btn.disabled = false; return toast(errMsg(err)); }
+    (S.answers[qid] || (S.answers[qid] = {}))[me()] = { answer: v, created_at: new Date().toISOString() };
+    S.qEdit = false;
+    drawSheet(); renderTab();
+    toast(!first ? "답을 고쳤어요" : ansOf(qid, pid()) ? `답이 열렸어요 · ♥+${H.answer}` : `답했어요 · ♥+${H.answer}`);
+  } }, init ? "고치기" : `답하기 · ♥+${H.answer}`);
+  return h("div", { class: "field" }, ta, btn);
+}
+
+/* ---------------- 밸런스 ---------------- */
+function renderBal() {
+  const p = pid(), order = balOrder();
+  const both = order.filter((b) => pickOf(b.id, me()) && pickOf(b.id, p));
+  const same = both.filter((b) => pickOf(b.id, me()) === pickOf(b.id, p));
+  const cur = (S.balShow && BMAP[S.balShow]) || order.find((b) => !pickOf(b.id, me()));
+  const parts = [h("div", { class: "title" }, "밸런스 게임"),
+    h("div", { class: "card match" },
+      h("div", { class: "pct" }, both.length ? `${Math.round(same.length / both.length * 100)}%` : "–"),
+      h("div", {}, h("div", { class: "h2" }, "우리 일치율"),
+        h("div", { class: "sub" }, both.length ? `${both.length}개 중 ${same.length}개 같은 선택` : "둘 다 고른 게 아직 없어요")))];
+  parts.push(cur ? balCard(cur) : h("div", { class: "card center", style: col(4) }, h("div", { class: "h2" }, "전부 골랐어요 🎉"), h("p", { class: "sub" }, "새 문항이 생기면 여기에 나와요")));
+  const at = (b) => { const x = S.picks[b.id] || {}; return [x[me()], x[p]].reduce((a, v) => (v && v.created_at > a ? v.created_at : a), ""); };
+  const recent = both.slice().sort((a, b) => (at(a) < at(b) ? 1 : -1)).slice(0, 12);
+  if (recent.length) parts.push(h("div", { class: "sec" }, "최근 결과"), h("div", { class: "hist" }, recent.map((b) => {
+    const mk = pickOf(b.id, me()), tk = pickOf(b.id, p);
+    return h("div", {}, h("span", {}, mk === tk ? "💞" : "↔"),
+      h("span", { class: "grow" }, mk === tk ? `둘 다 ${b[mk]}` : `나: ${b[mk]} · ${nick(p)}: ${b[tk]}`));
+  })));
+  view(...parts);
+}
+function balCard(b) {
+  const p = pid(), mk = pickOf(b.id, me()), tk = pickOf(b.id, p), reveal = !!(mk && tk);
+  const choice = (k) => {
+    const who = [mk === k ? "나" : null, reveal && tk === k ? nick(p) : null].filter(Boolean);
+    return h("button", { class: "choice" + (mk === k ? " mine" : "") + (reveal && tk === k ? " theirs" : ""), onclick: () => pick(b, k) },
+      b[k], who.length ? h("span", { class: "tag" }, who.join(" · ")) : null);
+  };
+  const parts = [h("span", { class: "chip", style: { alignSelf: "flex-start" } }, DATA.balanceCats[b.cat]), choice("a"), h("div", { class: "vs" }, "VS"), choice("b")];
+  if (mk) {
+    parts.push(reveal ? h("div", { class: "res" }, mk === tk ? "같은 선택! 💞" : "서로 달라요 🙈")
+      : h("div", { class: "lock" }, p ? josa(nick(p), "가 고르면 결과가 열려요") : "상대가 들어오면 결과를 볼 수 있어요"));
+    parts.push(h("button", { class: "btn wide", onclick: () => { S.balShow = null; renderTab(); } }, "다음 →"));
+  } else {
+    parts.push(h("p", { class: "tiny center" }, tk ? josa(nick(p), "는 이미 골랐어요. 나도 골라야 보여요") : "골라야 상대 선택이 보여요"));
+  }
+  return h("div", { class: "vs-wrap" }, parts);
+}
+async function pick(b, k) {
+  if (pickOf(b.id, me())) return;                // 한 번 고르면 끝
+  try { await S.api.savePick(b.id, k); } catch (err) { return toast(errMsg(err)); }
+  (S.picks[b.id] || (S.picks[b.id] = {}))[me()] = { pick: k, created_at: new Date().toISOString() };
+  S.balShow = b.id;
+  renderTab();
+  toast(`♥+${H.pick}`);
+}
+
+/* ---------------- 우리 (설정) ---------------- */
+function renderUs() {
+  const p = partner(), demo = S.api.kind === "demo";
+  const start = h("input", { class: "input", type: "date", max: today(), value: S.couple.start_date || "", onchange: async () => {
+    const v = start.value || null;
+    try { await S.api.updateCouple({ start_date: v }); S.couple.start_date = v; toast(v ? "사귄 날을 바꿨어요" : "사귄 날을 지웠어요"); renderTab(); }
+    catch (err) { toast(errMsg(err)); }
+  } });
+  const nm = h("input", { class: "input grow", maxlength: 10, value: nick(me()) });
+  const parts = [
+    h("div", { class: "title" }, "우리"),
+    h("div", { class: "card", style: col(12) },
+      h("div", { class: "names" }, nick(me()), h("span", { class: "hrt" }, "♥"), p ? nick(p.user_id) : h("span", { class: "sub" }, "기다리는 중")),
+      h("div", { class: "field" }, h("label", {}, "사귄 날"), start),
+      S.couple.start_date ? h("p", { class: "sub" }, `오늘로 ${Math.max(0, daysBetween(S.couple.start_date, today()) + 1)}일째예요`) : null),
+    h("div", { class: "card", style: col() },
+      h("div", { class: "field" }, h("label", {}, "내 이름"),
+        h("div", { class: "row" }, nm, h("button", { class: "btn sm", onclick: async () => {
+          const v = nm.value.trim();
+          if (!v) return toast("이름을 넣어 주세요");
+          try { await S.api.updateNickname(v); S.members.find((m) => m.user_id === me()).nickname = v; toast("이름을 바꿨어요"); renderTab(); }
+          catch (err) { toast(errMsg(err)); }
+        } }, "저장")))),
+  ];
+  if (!p) parts.push(inviteCard());
+  parts.push(h("div", { class: "card", style: col(4) },
+    h("div", { class: "row" }, h("div", { class: "h2 grow" }, "우리 하트"), h("span", { class: "hearts" }, `♥ ${Math.max(0, hearts())}`)),
+    h("p", { class: "sub" }, `질문에 답하면 +${H.answer}, 캘린더에 기록하면 +${H.entry}, 밸런스를 고르면 +${H.pick}. 둘이 모은 하트로 방을 꾸며요.`)));
+  const list = h("div", { class: "list" });
+  if (demo) {
+    list.append(
+      h("button", { class: "it", onclick: demoSwitch }, h("span", { class: "grow" }, "상대 입장으로 바꿔 보기"), h("span", { class: "tiny" }, `지금: ${nick(me())}`)),
+      h("button", { class: "it", onclick: () => { if (confirm("데모를 처음 상태로 되돌릴까요?")) { S.api.reset(); location.reload(); } } }, h("span", { class: "grow" }, "데모 처음부터")),
+      h("button", { class: "it", onclick: () => { localStorage.removeItem(MODE_KEY); location.reload(); } }, h("span", { class: "grow" }, "데모 끝내기")));
+  } else {
+    list.append(
+      h("div", { class: "it" }, h("span", { class: "grow sub" }, "로그인 계정"), h("span", { class: "tiny" }, S.user.email || "")),
+      h("button", { class: "it", onclick: logout }, h("span", { class: "grow" }, "로그아웃")));
+  }
+  parts.push(list);
+  parts.push(h("button", { class: "btn ghost", onclick: leave }, "커플 연결 끊기"), h("p", { class: "tiny center" }, "둘이서 · v1"));
+  view(...parts);
+}
+async function demoSwitch() {
+  S.api.switchUser();
+  S.user = await S.api.session();
+  S.balShow = null;
+  await afterLogin();
+  toast(`이제 ${josa(nick(me()), "의")} 화면이에요`);
+}
+async function logout() {
+  try { await S.api.signOut(); } catch (e) { /* 무시 */ }
+  location.reload();
+}
+async function leave() {
+  if (!confirm("정말 연결을 끊을까요?\n둘 다 나가면 우리 기록이 모두 사라져요.")) return;
+  if (!confirm("한 번 더 확인할게요. 연결을 끊을까요?")) return;
+  try { await S.api.leaveCouple(); } catch (err) { return toast(errMsg(err)); }
+  if (S.api.kind === "demo") localStorage.removeItem(MODE_KEY);
+  location.reload();
+}
+
+/* =====================================================================
+   시작
+   ===================================================================== */
+let unsub = null;
+async function afterLogin() {
+  noTabs();
+  view(h("div", { class: "spin" }));
+  let c;
+  try { c = await S.api.loadCouple(); } catch (err) { return renderError(err); }
+  if (!c) return renderCoupleSetup("new");
+  S.couple = c.couple; S.members = c.members;
+  try { await loadAll(); } catch (err) { return renderError(err); }
+  if (unsub) unsub();
+  unsub = S.api.subscribe(onRemote);
+  showMain();
+}
+async function boot() {
+  const hasCfg = !!(CFG.supabaseUrl && CFG.supabaseAnonKey && window.supabase);
+  const demo = localStorage.getItem(MODE_KEY) === "demo";
+  if (!hasCfg && !demo) return renderSetup();
+  S.api = demo ? DemoApi() : SupaApi();
+  if (S.api.onSignedOut) S.api.onSignedOut(() => location.reload());
+  try { S.user = await S.api.session(); } catch (e) { console.error(e); }
+  if (!S.user) return renderAuth("in");
+  await afterLogin();
+}
+// 앱으로 돌아오면 놓친 변경을 한 번 더 받아 온다
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && S.couple) ["couples", "answers", "balance_picks", "room_items", "entries"].forEach(onRemote);
+});
+
+// 테스트에서 들여다볼 수 있게 열어 둔다
+window.__duriseo = { S, Q, BAL, todayQ, hearts, questionOrder, annivLabel };
+boot();
+})();
