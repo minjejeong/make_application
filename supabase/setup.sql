@@ -95,6 +95,9 @@ create table if not exists public.wishes (
 );
 -- 장소 안에 갈 곳을 넣는 칸 (이 칸이 생기기 전에 만든 테이블에도 추가)
 alter table public.wishes add column if not exists parent_id uuid references public.wishes(id) on delete cascade;
+-- 버킷리스트(bucket)도 같은 목록에 담는다
+alter table public.wishes drop constraint if exists wishes_kind_check;
+alter table public.wishes add constraint wishes_kind_check check (kind in ('movie','place','bucket'));
 create index if not exists wishes_couple on public.wishes(couple_id);
 create index if not exists wishes_parent on public.wishes(parent_id);
 
@@ -123,6 +126,33 @@ create table if not exists public.events (
 );
 create index if not exists events_couple on public.events(couple_id);
 
+-- 타임캡슐 편지: open_on(한국 날짜)이 돼야 받는 사람이 내용을 읽을 수 있다. 고칠 수는 없다
+create table if not exists public.letters (
+  id         uuid primary key default gen_random_uuid(),
+  couple_id  uuid not null references public.couples(id) on delete cascade,
+  from_user  uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  title      text not null default '' check (char_length(title) <= 100),
+  body       text not null check (char_length(body) between 1 and 5000),
+  open_on    date not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists letters_couple on public.letters(couple_id);
+
+-- 알림 받을 기기 (폰마다 하나). 알림 함수만 전체를 읽는다
+create table if not exists public.push_subs (
+  endpoint   text primary key,
+  couple_id  uuid not null references public.couples(id) on delete cascade,
+  user_id    uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  p256dh     text not null,
+  auth       text not null,
+  created_at timestamptz not null default now()
+);
+-- 같은 알림을 너무 자주 보내지 않게 남기는 기록 (앱에서는 못 읽는다)
+create table if not exists public.push_log (
+  key     text primary key,
+  sent_at timestamptz not null default now()
+);
+
 -- ---------- 멤버 확인 함수 ----------
 -- security definer: 정책 안에서 couple_members를 다시 읽을 때 생기는 RLS 무한 재귀를 막는다.
 create or replace function public.is_member(cid uuid)
@@ -145,6 +175,9 @@ alter table public.room_items     enable row level security;
 alter table public.wishes         enable row level security;
 alter table public.wish_reviews   enable row level security;
 alter table public.events         enable row level security;
+alter table public.letters        enable row level security;
+alter table public.push_subs      enable row level security;
+alter table public.push_log       enable row level security;   -- 정책 없음 = 앱에서는 아무것도 못 한다
 
 drop policy if exists couples_select on public.couples;
 create policy couples_select on public.couples for select to authenticated using (public.is_member(id));
@@ -240,6 +273,28 @@ create policy events_update on public.events for update to authenticated
 drop policy if exists events_delete on public.events;
 create policy events_delete on public.events for delete to authenticated using (public.is_member(couple_id));
 
+-- 편지: 직접 읽기는 내가 쓴 것이나 열린 것만. 잠긴 편지가 있다는 것(제목·날짜)은 letters_list()로만 본다
+drop policy if exists letters_select on public.letters;
+create policy letters_select on public.letters for select to authenticated
+  using (public.is_member(couple_id) and (from_user = auth.uid() or open_on <= (now() at time zone 'Asia/Seoul')::date));
+drop policy if exists letters_insert on public.letters;
+create policy letters_insert on public.letters for insert to authenticated
+  with check (public.is_member(couple_id) and from_user = auth.uid());
+drop policy if exists letters_delete on public.letters;
+create policy letters_delete on public.letters for delete to authenticated using (from_user = auth.uid());
+
+-- 알림 기기: 내 것만 보고 넣고 지운다
+drop policy if exists push_subs_select on public.push_subs;
+create policy push_subs_select on public.push_subs for select to authenticated using (user_id = auth.uid());
+drop policy if exists push_subs_insert on public.push_subs;
+create policy push_subs_insert on public.push_subs for insert to authenticated
+  with check (user_id = auth.uid() and public.is_member(couple_id));
+drop policy if exists push_subs_update on public.push_subs;
+create policy push_subs_update on public.push_subs for update to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid() and public.is_member(couple_id));
+drop policy if exists push_subs_delete on public.push_subs;
+create policy push_subs_delete on public.push_subs for delete to authenticated using (user_id = auth.uid());
+
 -- 앱에서 고칠 수 있는 칸만 열어 둔다. 초대 코드·구성원 기록·소속 커플은 아래 함수로만 바뀐다.
 revoke update on public.couples from anon, authenticated;
 grant  update (start_date, wall, floor) on public.couples to authenticated;
@@ -319,6 +374,21 @@ grant  execute on function public.leave_couple()            to authenticated;
 grant  execute on function public.is_member(uuid)           to authenticated;
 grant  execute on function public.is_member_text(text)      to authenticated;
 
+-- 편지 목록: 잠긴 편지는 내용(body)만 비워서 준다 (받는 사람도 '편지가 기다린다'는 건 알 수 있게)
+create or replace function public.letters_list()
+returns table (id uuid, from_user uuid, title text, body text, open_on date, created_at timestamptz, locked boolean)
+language sql stable security definer set search_path = public as $$
+  select l.id, l.from_user, l.title,
+         case when l.from_user = auth.uid() or l.open_on <= (now() at time zone 'Asia/Seoul')::date then l.body end,
+         l.open_on, l.created_at,
+         l.open_on > (now() at time zone 'Asia/Seoul')::date
+  from letters l
+  join couple_members m on m.couple_id = l.couple_id and m.user_id = auth.uid()
+  order by l.open_on, l.created_at;
+$$;
+revoke execute on function public.letters_list() from public, anon;
+grant  execute on function public.letters_list() to authenticated;
+
 -- ---------- 사진 저장소 (비공개, 경로 = 커플id/파일명) ----------
 insert into storage.buckets (id, name, public)
 values ('photos', 'photos', false)
@@ -338,10 +408,45 @@ create policy "duriseo photos delete" on storage.objects for delete to authentic
 do $$
 declare t text;
 begin
-  foreach t in array array['couples','couple_members','entries','answers','balance_picks','room_items','wishes','wish_reviews','events'] loop
+  foreach t in array array['couples','couple_members','entries','answers','balance_picks','room_items','wishes','wish_reviews','events','letters'] loop
     begin
       execute format('alter publication supabase_realtime add table public.%I', t);
     exception when duplicate_object then null;   -- 이미 등록됨
     end;
   end loop;
 end $$;
+
+-- ---------- 알림 (상대가 뭔가 하면 내 폰으로) ----------
+-- 기록이 생기면 Edge Function 'notify'를 부른다 (supabase/functions/notify). pg_net이 비동기로 보내서 저장을 늦추지 않는다.
+-- 다른 Supabase 프로젝트에서 쓰면 아래 주소의 프로젝트 id(wlufnzpyhyrxpahvnnbg)만 바꾸면 된다.
+do $$ begin
+  create extension if not exists pg_net with schema extensions;
+exception when others then
+  raise notice 'pg_net을 켜지 못했어요(알림만 안 가요): %', sqlerrm;
+end $$;
+
+create or replace function public.notify_partner()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  perform net.http_post(
+    url     := 'https://wlufnzpyhyrxpahvnnbg.supabase.co/functions/v1/notify',
+    body    := jsonb_build_object('table', TG_TABLE_NAME, 'op', TG_OP, 'actor', auth.uid(), 'record', to_jsonb(NEW)),
+    headers := '{"Content-Type": "application/json"}'::jsonb
+  );
+  return NEW;
+exception when others then
+  return NEW;      -- 알림이 실패해도(pg_net이 없어도) 저장은 그대로
+end $$;
+
+do $$
+declare t text;
+begin
+  foreach t in array array['answers','balance_picks','entries','wishes','wish_reviews','events','letters'] loop
+    execute format('drop trigger if exists notify_partner on public.%I', t);
+    execute format('create trigger notify_partner after insert on public.%I for each row execute function public.notify_partner()', t);
+  end loop;
+end $$;
+-- 영화를 봤다 · 장소에 다녀왔다 · 버킷을 이뤘다 (done_on이 처음 채워질 때)
+drop trigger if exists notify_partner_done on public.wishes;
+create trigger notify_partner_done after update of done_on on public.wishes
+  for each row when (old.done_on is null and new.done_on is not null) execute function public.notify_partner();

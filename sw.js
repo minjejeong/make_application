@@ -1,7 +1,7 @@
 /* 둘이서 — 오프라인 지원
    앱 파일을 캐시에 담아 인터넷이 약해도 화면은 뜨게 한다. (데이터는 Supabase에서 온다)
    앱 파일을 고친 뒤에는 아래 CACHE 버전을 올려야 설치된 폰에도 반영된다. */
-const CACHE = "duriseo-v8";
+const CACHE = "duriseo-v9";
 
 const ASSETS = [
   "./",
@@ -77,5 +77,24 @@ self.addEventListener("fetch", (e) => {
   e.respondWith(caches.match(req).then((hit) => {
     const net = fetch(req).then((res) => put(req, res)).catch(() => hit);
     return hit || net;
+  }));
+});
+
+// 알림: 서버(Edge Function notify)가 보낸 {title, body, tag, url}을 띄운다
+self.addEventListener("push", (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (err) { d = { body: e.data ? e.data.text() : "" }; }
+  e.waitUntil(self.registration.showNotification(d.title || "둘이서", {
+    body: d.body || "", tag: d.tag, renotify: !!d.tag,
+    icon: "./icon-192.png", badge: "./icon-192.png", data: { url: d.url || "./" },
+  }));
+});
+// 알림을 누르면 열려 있는 앱으로, 없으면 새로 연다
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || "./";
+  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => {
+    const w = wins.find((x) => "focus" in x);
+    return w ? w.focus() : self.clients.openWindow(url);
   }));
 });

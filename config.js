@@ -11,4 +11,6 @@ window.DURISEO_CONFIG = {
   supabaseUrl: "https://wlufnzpyhyrxpahvnnbg.supabase.co",
   supabaseAnonKey: "sb_publishable_-wMJ2rRUOhkpG-BF6NddPw_2C3yoiKG",
   kakaoMapKey: "da38ed4da5ac7ce5b765cf126f065f54",
+  // 알림용 공개키 (VAPID). 짝이 되는 비공개키는 Supabase의 Secret VAPID_PRIVATE_KEY에만 둔다
+  vapidPublicKey: "BLZC6AuaoH4HrquCfOFgCmLvTK78_4Qvagg7_9Op4v-L8ZQwWen8RW6V-sNr-006oCi64bBCjTsrjcCfp3yvlpE",
 };

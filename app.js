@@ -34,7 +34,9 @@ function h(tag, props, ...kids) {
   }
   return el;
 }
-const view = (...kids) => $("#view").replaceChildren(...kids.flat(Infinity).filter(Boolean));
+// HEAD: 묶은 탭(추억·대화·함께)의 제목 + 칸 고르기. renderTab이 정하고, 화면을 그릴 때마다 맨 위에 붙는다
+let HEAD = null;
+const view = (...kids) => $("#view").replaceChildren(...[HEAD, kids].flat(Infinity).filter(Boolean));
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const uuid = () => (crypto.randomUUID ? crypto.randomUUID()
   : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
@@ -47,6 +49,10 @@ const ICON = {
   q:    '<svg viewBox="0 0 24 24"><path d="M20.5 11.5c0 4.1-3.8 7.4-8.5 7.4-1.3 0-2.5-.2-3.6-.7L4 20l1.3-3.7A6.9 6.9 0 0 1 3.5 11.5C3.5 7.4 7.3 4 12 4s8.5 3.4 8.5 7.5z"/></svg>',
   bal:  '<svg viewBox="0 0 24 24"><path d="M12 4v16M7.5 20h9M5 7.5h14M5 7.5 2.5 14a2.6 2.6 0 0 0 5 0zM19 7.5 16.5 14a2.6 2.6 0 0 0 5 0z"/></svg>',
   map:  '<svg viewBox="0 0 24 24"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></svg>',
+  mem:  '<svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
+  talk: '<svg viewBox="0 0 24 24"><path d="M20.5 11.5c0 4.1-3.8 7.4-8.5 7.4-1.3 0-2.5-.2-3.6-.7L4 20l1.3-3.7A6.9 6.9 0 0 1 3.5 11.5C3.5 7.4 7.3 4 12 4s8.5 3.4 8.5 7.5z"/></svg>',
+  with: '<svg viewBox="0 0 24 24"><path d="M12 3.5l2.5 5.2 5.7.8-4.1 4 1 5.6L12 16.4l-5.1 2.7 1-5.6-4.1-4 5.7-.8z"/></svg>',
+  stats:'<svg viewBox="0 0 24 24"><path d="M5.5 20v-6.5M12 20V5M18.5 20v-10M3 20.5h18"/></svg>',
   us:   '<svg viewBox="0 0 24 24"><path d="M12 20s-7.5-4.6-7.5-10.1A4.3 4.3 0 0 1 12 7.6a4.3 4.3 0 0 1 7.5 2.3C19.5 15.4 12 20 12 20z"/></svg>',
 };
 function icon(name) { const s = document.createElement("span"); s.innerHTML = ICON[name]; return s.firstChild; }
@@ -167,7 +173,7 @@ const S = {
   wishes: [],        // wishes 행 (영화 · 장소)
   reviews: {},       // wish_id -> {user_id: {stars, review, created_at}}
   wishesErr: null,   // 목록을 못 불러왔을 때 보여줄 말 (setup.sql을 다시 안 돌렸으면 테이블이 없다)
-  wishTab: { movie: "todo", place: "todo" },
+  wishTab: { movie: "todo", place: "todo", bucket: "todo" },
   wishEdit: false,   // 목록 시트에서 제목·메모 고치는 중
   revEdit: false,    // 내 별점 고치는 중
   revDraft: null,    // 쓰는 중인 별점 {stars, text}
@@ -178,6 +184,16 @@ const S = {
   events: [],        // 캘린더 일정 · 생일 (반복 포함)
   eventsErr: null,   // 일정을 못 불러왔을 때 보여줄 말
   evForm: null,      // 날짜 시트에서 쓰는 중인 일정 {id?, title, day, repeat, icon}
+  sub: { mem: "cal", talk: "q", with: "movie" },   // 묶은 탭 안에서 고른 칸
+  letters: [],       // 타임캡슐 편지 {id, from_user, title, body(잠기면 null), open_on, created_at, locked}
+  lettersErr: null,
+  album: null,       // 사진 모아보기 {list, done, loading}
+  memories: null,    // 홈 '그때 오늘' {day, label, entries, wishes}
+  statsMonth: today().slice(0, 7),
+  statsRows: null,   // 통계용 전체 기록 [{user_id, day, photo}]
+  statsSel: null,    // 월별 막대에서 누른 달
+  pushOn: null,      // 이 기기 알림 켜짐 여부 (null = 확인 중)
+  recovering: false, // 비밀번호 재설정 메일 링크로 들어옴
 };
 const me = () => S.user && S.user.id;
 const partner = () => S.members.find((m) => m.user_id !== me());
@@ -263,7 +279,9 @@ function nextOcc(ev, from) {
 const eventsOn = (ds) => S.events.filter((e) => occursOn(e, ds));
 // 그날 같이 한 것 (다녀온 곳 · 같이 본 영화) — 지도·영화에서 고른 날짜가 캘린더에 그대로 뜬다
 const doneOn = (ds) => S.wishes.filter((w) => w.done_on === ds);
-const doneIcon = (w) => (w.kind === "movie" ? "🎬" : "📍");
+const doneIcon = (w) => ({ movie: "🎬", bucket: "🏆" })[w.kind] || "📍";
+// 그날 열리는 편지 (캘린더에 💌)
+const lettersOn = (ds) => S.letters.filter((l) => l.open_on === ds);
 // 다가오는 날: 100일 단위·주년 기념일 + 일정들 중 가까운 순
 function upcoming(n) {
   const t = today(), out = [];
@@ -286,6 +304,15 @@ function SupaApi() {
   const ok = (r) => { if (r.error) throw r.error; return r.data; };
   const cid = () => S.couple.id;
   const uid = () => S.user.id;
+  // Supabase는 한 번에 1000줄까지만 주니, 다 받을 때까지 이어서 읽는다 (make = 새 쿼리를 만드는 함수)
+  async function all(make) {
+    const out = [];
+    for (let from = 0; ; from += 1000) {
+      const rows = ok(await make().range(from, from + 999));
+      out.push(...rows);
+      if (rows.length < 1000) return out;
+    }
+  }
   return {
     kind: "supabase",
     async session() {
@@ -384,6 +411,48 @@ function SupaApi() {
     async addEvent(row) { return ok(await sb.from("events").insert({ couple_id: cid(), ...row }).select().single()); },
     async updateEvent(id, patch) { ok(await sb.from("events").update(patch).eq("id", id)); },
     async deleteEvent(id) { ok(await sb.from("events").delete().eq("id", id)); },
+
+    // 그날들의 기록 (홈 '그때 오늘')
+    async loadEntriesOn(days) { return ok(await sb.from("entries").select("*").eq("couple_id", cid()).in("day", days).order("created_at")); },
+    // 사진 모아보기: 최근 날짜부터 limit개씩
+    async loadPhotos(offset, limit) {
+      return ok(await sb.from("entries").select("id,user_id,day,memo,photo_path,thumb_path,created_at").eq("couple_id", cid())
+        .not("photo_path", "is", null).order("day", { ascending: false }).order("created_at", { ascending: false }).range(offset, offset + limit - 1));
+    },
+    // 통계용: 기록 전부 (누가 · 언제 · 사진 여부만)
+    async loadEntryStats() {
+      const rows = await all(() => sb.from("entries").select("user_id,day,photo_path").eq("couple_id", cid()).order("created_at").order("id"));
+      return rows.map((r) => ({ user_id: r.user_id, day: r.day, photo: !!r.photo_path }));
+    },
+    // 편지: 잠긴 편지는 서버가 내용을 비워서 준다 (letters_list)
+    async loadLetters() { return ok(await sb.rpc("letters_list")); },
+    async addLetter(row) { ok(await sb.from("letters").insert({ couple_id: cid(), ...row })); },
+    async deleteLetter(id) { ok(await sb.from("letters").delete().eq("id", id)); },
+
+    // 비밀번호: 메일로 재설정 링크 → 링크로 들어오면 새 비밀번호
+    async resetPassword(email) { ok(await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname })); },
+    async updatePassword(password) { ok(await sb.auth.updateUser({ password })); },
+    onRecovery(cb) { sb.auth.onAuthStateChange((ev) => { if (ev === "PASSWORD_RECOVERY") cb(); }); },
+
+    // 알림 받을 기기
+    async savePushSub(s) { ok(await sb.from("push_subs").upsert({ couple_id: cid(), user_id: uid(), ...s }, { onConflict: "endpoint" })); },
+    async deletePushSub(endpoint) { ok(await sb.from("push_subs").delete().eq("endpoint", endpoint)); },
+
+    // 백업: 우리 기록 전부
+    async exportAll() {
+      const by = (t, cols, ...order) => all(() => order.reduce((q, c) => q.order(c), sb.from(t).select(cols).eq("couple_id", cid())));
+      const [answers, picks, entries, room, wishes, reviews, events, letters] = await Promise.all([
+        by("answers", "question_id,user_id,answer,created_at", "created_at", "question_id"),
+        by("balance_picks", "item_id,user_id,pick,created_at", "created_at", "item_id"),
+        by("entries", "*", "day", "created_at", "id"),
+        by("room_items", "*", "created_at", "id"),
+        by("wishes", "*", "created_at", "id"),
+        by("wish_reviews", "*", "created_at", "wish_id"),
+        by("events", "*", "day", "id").catch(() => []),
+        sb.rpc("letters_list").then(ok).catch(() => []),
+      ]);
+      return { answers, picks, entries, room, wishes, reviews, events, letters };
+    },
     async urls(paths) {
       const r = ok(await sb.storage.from("photos").createSignedUrls(paths, 6 * 3600));
       const out = {};
@@ -394,7 +463,7 @@ function SupaApi() {
       const id = cid();
       const ch = sb.channel("duriseo-" + id);
       // 목록 테이블이 아직 없으면(setup.sql을 다시 안 돌렸으면) 구독에서 뺀다 — 없는 테이블이 끼면 채널 전체가 실패한다
-      const wishT = (S.wishesErr ? [] : ["wishes", "wish_reviews"]).concat(S.eventsErr ? [] : ["events"]);
+      const wishT = (S.wishesErr ? [] : ["wishes", "wish_reviews"]).concat(S.eventsErr ? [] : ["events"], S.lettersErr ? [] : ["letters"]);
       for (const t of ["answers", "balance_picks", "room_items", "entries", "couple_members", ...wishT])
         ch.on("postgres_changes", { event: "*", schema: "public", table: t, filter: `couple_id=eq.${id}` }, () => onChange(t));
       ch.on("postgres_changes", { event: "*", schema: "public", table: "couples", filter: `id=eq.${id}` }, () => onChange("couples"));
@@ -472,6 +541,27 @@ function DemoApi() {
     seedKids();
     seedEvents();
   }
+  // 버킷리스트 · 타임캡슐 편지 · '한 달 전 오늘' 기록 예시 (이 기능들 전에 만든 데모에도 한 번 넣는다)
+  function seedV9() {
+    D.v9 = true;
+    const now = stamp(), cid = D.couple.id;
+    const wish = (title, extra) => ({ id: uuid(), couple_id: cid, kind: "bucket", title, memo: "", added_by: ME, done_on: null, lat: null, lng: null,
+      address: null, place_url: null, place_cat: null, parent_id: null, created_at: now, ...extra });
+    const trip = wish("둘이서 첫 여행 가기", { added_by: YOU, done_on: addDays(today(), -40), memo: "어디든 좋아!" });
+    D.wishes.push(wish("커플링 맞추기", { memo: "100일 전에!" }), wish("제주도 한 달 살기", { added_by: YOU }), trip);
+    D.reviews.push({ wish_id: trip.id, couple_id: cid, user_id: YOU, stars: 5, review: "강릉 바다 최고였어", created_at: now });
+    const letter = (from, title, body, open_on, ago) => ({ id: uuid(), couple_id: cid, from_user: from, title, body, open_on,
+      created_at: new Date(Date.now() - ago * 864e5).toISOString() });
+    D.letters = [
+      letter(YOU, "처음 만난 날 생각나?", "그날 너무 떨려서 무슨 말 했는지 하나도 기억이 안 나. 그래도 웃는 얼굴은 또렷해. 앞으로도 잘 부탁해 💗", addDays(today(), -1), 60),
+      letter(YOU, "100일에 열어 봐", "(100일이 되면 열려요)", addDays(today(), 12), 3),
+      letter(ME, "1주년의 우리에게", "1년 뒤에도 지금처럼 서로 제일 친한 친구이길!", addDays(today(), 278), 1),
+    ];
+    // 한 달 전 오늘의 기록 (홈 '그때 오늘'에 뜬다)
+    const [y, m, d] = today().split("-").map(Number), pm = m === 1 ? 12 : m - 1, py = m === 1 ? y - 1 : y;
+    D.entries.push({ id: uuid(), couple_id: cid, user_id: YOU, day: clampYmd(py, pm, d), memo: "처음으로 같이 한강에서 라면 먹은 날 🍜",
+      photo_path: null, thumb_path: null, created_at: now });
+  }
   // 일정 예시: 둘의 생일(매년) · 토요일마다 같이 하는 것(매주)
   function seedEvents() {
     const now = stamp(), y96 = (ds) => "1996" + ds.slice(4);      // 1996년은 윤년이라 2월 29일도 된다
@@ -515,6 +605,7 @@ function DemoApi() {
       if (!D.wishes) { seedWishes(); save(); }
       if (!D.kids) { seedKids(); save(); }
       if (!D.events) { seedEvents(); save(); }
+      if (!D.v9) { seedV9(); save(); }
       return { id: D.as, email: D.as === ME ? "하늘@데모" : "바다@데모" };
     },
     async signOut() {},
@@ -575,6 +666,29 @@ function DemoApi() {
     },
     async updateEvent(id, patch) { const e = D.events.find((x) => x.id === id); if (e) Object.assign(e, patch); save(); },
     async deleteEvent(id) { D.events = D.events.filter((x) => x.id !== id); save(); },
+    async loadEntriesOn(days) { return copy(D.entries.filter((e) => days.includes(e.day))); },
+    async loadPhotos(offset, limit) {
+      return copy(D.entries.filter((e) => e.photo_path).sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0)).slice(offset, offset + limit));
+    },
+    async loadEntryStats() { return D.entries.map((e) => ({ user_id: e.user_id, day: e.day, photo: !!e.photo_path })); },
+    // 서버의 letters_list처럼: 잠긴 남의 편지는 내용을 비운다
+    async loadLetters() {
+      const t = today();
+      return (D.letters || []).slice().sort((a, b) => (a.open_on < b.open_on ? -1 : 1)).map((l) => {
+        const locked = l.open_on > t;
+        return { ...copy(l), body: locked && l.from_user !== uid() ? null : l.body, locked };
+      });
+    },
+    async addLetter(row) { D.letters.push({ id: uuid(), couple_id: D.couple.id, from_user: uid(), created_at: stamp(), ...row }); save(); },
+    async deleteLetter(id) { D.letters = D.letters.filter((l) => l.id !== id); save(); },
+    async updatePassword() { throw new Error("demo_only"); },
+    async savePushSub() { throw new Error("demo_only"); },
+    async deletePushSub() {},
+    async exportAll() {
+      return { answers: copy(D.answers), picks: copy(D.picks), entries: copy(D.entries), room: copy(D.room), wishes: copy(D.wishes),
+               reviews: copy(D.reviews), events: copy(D.events || []), letters: await this.loadLetters() };
+    },
+    photoData(path) { return D.photos[path] || null; },      // 백업에 넣을 데모 사진 (data URL)
     async saveReview(wish_id, stars, review) {
       const r = D.reviews.find((x) => x.wish_id === wish_id && x.user_id === uid());
       if (r) Object.assign(r, { stars, review }); else D.reviews.push({ wish_id, couple_id: D.couple.id, user_id: uid(), stars, review, created_at: stamp() });
@@ -632,12 +746,24 @@ async function loadEventData() {
       ? "일정·생일을 넣으려면 Supabase SQL Editor에서 setup.sql을 한 번 더 실행해 주세요" : errMsg(e);
   }
 }
+// 편지. 실패해도 나머지는 그대로
+async function loadLetterData() {
+  try { S.letters = await S.api.loadLetters(); S.lettersErr = null; }
+  catch (e) {
+    console.warn(e);
+    S.letters = [];
+    S.lettersErr = /schema cache|does not exist|Could not find the/i.test(String((e && e.message) || e))
+      ? "편지를 쓰려면 Supabase SQL Editor에서 setup.sql을 한 번 더 실행해 주세요" : errMsg(e);
+  }
+}
+// 기록이 바뀌면 그걸로 만든 화면(앨범 · 통계 · 그때 오늘)은 다시 읽게 비운다
+function entriesChanged() { S.album = null; S.statsRows = null; S.memories = null; }
 let urlsAt = 0;       // 사진 주소를 받은 시각. Supabase 주소는 6시간이면 만료된다
 async function loadAll() {
   const [ans, picks, room, cnt] = await Promise.all([S.api.loadAnswers(), S.api.loadPicks(), S.api.loadRoom(), S.api.countEntries(),
-    loadWishData(), loadEventData()]);
+    loadWishData(), loadEventData(), loadLetterData()]);
   setAnswers(ans); setPicks(picks); S.room = room; S.entryCount = cnt;
-  S.entries = {}; S.urls = {}; urlsAt = Date.now();
+  S.entries = {}; S.urls = {}; urlsAt = Date.now(); entriesChanged();
   await loadMonth(S.calMonth, true);
 }
 
@@ -659,7 +785,9 @@ async function flushRemote() {
     if (ts.includes("room_items") && !S.dragging) S.room = await S.api.loadRoom();
     if (ts.includes("wishes") || ts.includes("wish_reviews")) await loadWishData();
     if (ts.includes("events")) await loadEventData();
+    if (ts.includes("letters")) await loadLetterData();
     if (ts.includes("entries")) {
+      entriesChanged();
       if (Date.now() - urlsAt > 5 * 3600e3) { S.urls = {}; urlsAt = Date.now(); }   // 만료되기 전에 새로 받는다
       S.entryCount = await S.api.countEntries();
       for (const ym of Object.keys(S.entries)) await loadMonth(ym, true);
@@ -725,12 +853,15 @@ function errMsg(e) {
   if (/does not exist|schema cache|Could not find the/i.test(m)) return "Supabase에 setup.sql을 먼저 실행해 주세요";
   if (/Failed to fetch|NetworkError|network|Load failed/i.test(m)) return "인터넷 연결을 확인해 주세요";
   if (/demo_quota/.test(m)) return "데모에서는 사진을 몇 장만 저장할 수 있어요";
+  if (/demo_only/.test(m)) return "데모에서는 쓸 수 없는 기능이에요";
+  if (/not authorized|Email address .* not authorized/i.test(m)) return "이 메일로는 보낼 수 없어요. README ‘메일 보내기 설정’을 확인해 주세요";
+  if (/should be different/i.test(m)) return "지금 비밀번호와 다른 비밀번호를 넣어 주세요";
   return "문제가 생겼어요. 잠시 후 다시 해 주세요";
 }
 const segBtn = (label, on, fn) => h("button", { class: on ? "on" : "", type: "button", onclick: fn }, label);
 const hero = (title, sub) => h("div", { class: "hero" }, h("div", { class: "logo-mark" }, "💞"), h("div", { class: "logo" }, title), h("p", { class: "sub" }, sub));
 const col = (gap) => ({ display: "flex", flexDirection: "column", gap: (gap || 10) + "px" });
-function noTabs() { $("#tabs").classList.add("hide"); $("#app").classList.add("no-tabs"); }
+function noTabs() { HEAD = null; $("#tabs").classList.add("hide"); $("#app").classList.add("no-tabs"); }
 
 function inviteCard() {
   const code = S.couple.invite_code;
@@ -813,6 +944,7 @@ function renderAuth(mode) {
     h("div", { class: "seg" }, segBtn("로그인", !up, () => renderAuth("in")), segBtn("처음이에요", up, () => renderAuth("up"))),
     form,
     h("p", { class: "tiny center" }, up ? "둘 다 각자 가입한 뒤, 한 사람이 만든 초대 코드로 연결해요" : "가입할 때 쓴 이메일로 로그인해요"),
+    up ? null : h("button", { class: "btn ghost", onclick: renderForgot }, "비밀번호를 잊었어요"),
   );
 }
 
@@ -864,7 +996,11 @@ function renderError(err) {
 /* =====================================================================
    메인 · 탭
    ===================================================================== */
-const TABS = [["home", "홈"], ["cal", "캘린더"], ["q", "질문"], ["bal", "밸런스"], ["map", "지도"], ["us", "우리"]];
+// 설정(us)은 탭이 아니라 홈 오른쪽 위 ⚙️로 들어간다
+const TABS = [["home", "홈"], ["mem", "추억"], ["talk", "대화"], ["map", "지도"], ["with", "함께"], ["stats", "통계"]];
+const renderMem = () => ({ cal: renderCal, album: renderAlbum, letter: renderLetters })[S.sub.mem]();
+const renderTalk = () => (S.sub.talk === "bal" ? renderBal() : renderQ());
+const renderWith = () => renderWishList(S.sub.with);
 function showMain() {
   $("#app").classList.remove("no-tabs");
   const nav = $("#tabs");
@@ -874,12 +1010,28 @@ function showMain() {
   renderTab();
 }
 function go(tab) {
-  if (tab === S.tab && tab === "q" && S.qCat) S.qCat = null;    // 질문 탭을 다시 누르면 목록 처음으로
+  if (tab === S.tab && tab === "talk" && S.qCat) S.qCat = null;    // 대화 탭을 다시 누르면 질문 목록 처음으로
   if ((tab === S.tab && tab === "map") || tab !== "map") { S.mapPlace = null; S.mapResults = null; clearTemp(); }   // 지도 탭도 마찬가지
   S.tab = tab;
-  if (tab !== "q") S.qCat = null;
+  if (tab !== "talk") S.qCat = null;
   renderTab();
   window.scrollTo(0, 0);
+}
+// 묶은 탭: [칸 id, 이름, 점 찍을 조건]
+const GROUPS = {
+  mem:  { title: "추억", items: [["cal", "📅 달력"], ["album", "🖼️ 앨범"], ["letter", "💌 편지", () => newLetters().length]] },
+  talk: { title: "대화", items: [["q", "💬 질문", () => waitingQs().length], ["bal", "⚖️ 밸런스", () => waitingPicks().length]] },
+  with: { title: "함께", items: [["movie", "🎬 영화", () => waitingRevs("movie").length], ["bucket", "🌟 버킷리스트", () => waitingRevs("bucket").length]] },
+};
+const groupNeed = (tab) => (GROUPS[tab] ? GROUPS[tab].items.some((it) => it[2] && it[2]()) : false);
+function groupHead(tab) {
+  const g = GROUPS[tab];
+  if (!g) return null;
+  return h("div", { class: "ghead" }, h("div", { class: "title" }, g.title),
+    h("div", { class: "seg" }, g.items.map(([k, label, need]) =>
+      h("button", { type: "button", class: S.sub[tab] === k ? "on" : "", onclick: () => {
+        S.sub[tab] = k; S.qCat = null; S.balShow = null; renderTab(); window.scrollTo(0, 0);
+      } }, label, need && need() ? h("i", { class: "sdot" }) : null))));
 }
 function renderTab() {
   if (!S.couple) return;
@@ -889,13 +1041,13 @@ function renderTab() {
   for (const b of $("#tabs .in").children) {
     b.classList.toggle("on", b.dataset.tab === S.tab);
     const t = b.dataset.tab;
-    const need = (t === "q" && (waitingQs().length > 0 || waitingRevs("movie").length > 0))
-      || (t === "bal" && waitingPicks().length > 0) || (t === "map" && waitingRevs("place").length > 0);
+    const need = groupNeed(t) || (t === "map" && waitingRevs("place").length > 0);
     const dot = b.querySelector(".dot");
     if (need && !dot) b.append(h("i", { class: "dot" }));
     if (!need && dot) dot.remove();
   }
-  ({ home: renderHome, cal: renderCal, q: renderQ, bal: renderBal, map: renderMap, us: renderUs })[S.tab]();
+  HEAD = groupHead(S.tab);
+  ({ home: renderHome, mem: renderMem, talk: renderTalk, map: renderMap, with: renderWith, stats: renderStats, us: renderUs })[S.tab]();
   if (k) {
     const n = document.querySelector(`#view [data-k="${k}"]`);
     if (n && n !== a) { n.focus({ preventScroll: true }); try { n.setSelectionRange(pos, pos); } catch (e) { /* 무시 */ } }
@@ -904,7 +1056,42 @@ function renderTab() {
 
 /* ---------------- 홈 ---------------- */
 function demoBanner() {
-  return h("div", { class: "banner" }, `데모 모드 · 지금은 ${josa(nick(me()), "의")} 화면이에요. ‘우리’ 탭에서 상대 입장으로 바꿔 볼 수 있어요`);
+  return h("div", { class: "banner" }, `데모 모드 · 지금은 ${josa(nick(me()), "의")} 화면이에요. 오른쪽 위 ⚙️ 설정에서 상대 입장으로 바꿔 볼 수 있어요`);
+}
+
+/* ---------------- 그때 오늘 (1년 전 · 2년 전 … 없으면 한 달 전) ---------------- */
+function memDays() {
+  const [y, m, d] = today().split("-").map(Number), out = [];
+  for (let k = 1; k <= 5; k++) out.push({ day: clampYmd(y - k, m, d), label: `${k}년 전 오늘` });
+  out.push({ day: clampYmd(m === 1 ? y - 1 : y, m === 1 ? 12 : m - 1, d), label: "한 달 전 오늘" });
+  return out;
+}
+async function loadMemories() {
+  const t = today(), days = memDays();
+  S.memories = { for: t, loading: true };
+  let rows = [];
+  try { rows = await S.api.loadEntriesOn(days.map((x) => x.day)); } catch (e) { console.warn(e); }
+  let found = null;
+  for (const x of days) {
+    const es = rows.filter((r) => r.day === x.day), ws = doneOn(x.day);
+    if (es.length || ws.length) { found = { ...x, entries: es, wishes: ws }; break; }
+  }
+  const ph = found && found.entries.find((e) => e.thumb_path);
+  if (ph && !S.urls[ph.thumb_path]) { try { Object.assign(S.urls, await S.api.urls([ph.thumb_path])); } catch (e) { console.warn(e); } }
+  S.memories = found ? { for: t, ...found } : { for: t, none: true };
+  if (S.tab === "home") renderTab();
+}
+function memoryCard() {
+  const M = S.memories;
+  if (!M || M.loading || M.none) return null;
+  const e = M.entries.find((x) => x.thumb_path) || M.entries[0], img = e && e.thumb_path && S.urls[e.thumb_path];
+  const text = e ? (e.memo || "사진을 남겼어요") : M.wishes.map((w) => `${doneIcon(w)} ${w.title}`).join(" · ");
+  const more = M.entries.length + M.wishes.length - 1;
+  return h("button", { class: "card memc", onclick: () => openDay(M.day) },
+    img ? h("img", { src: img, alt: "" }) : h("span", { class: "memc-ic" }, "📸"),
+    h("span", { class: "grow" }, h("span", { class: "sec", style: { margin: 0, display: "block" } }, M.label),
+      h("span", { class: "memc-t" }, text),
+      h("span", { class: "tiny" }, fmtShort(M.day) + (more > 0 ? ` · 그날 ${more}개 더` : ""))));
 }
 function qCard(q, label) {
   const p = pid(), mine = ansOf(q.id, me()), theirs = ansOf(q.id, p);
@@ -924,15 +1111,23 @@ function renderHome() {
   const parts = [
     h("div", { class: "home-head" },
       h("div", { class: "names" }, nick(me()), h("span", { class: "hrt" }, "♥"), p ? nick(p.user_id) : h("span", { class: "sub" }, "기다리는 중")),
-      sd ? h("div", { class: "dday" }, dday, h("small", {}, `${fmtShort(sd)}부터`))
-         : h("button", { class: "link", onclick: () => go("us") }, "사귄 날 정하기")),
+      h("div", { class: "row", style: { gap: "10px", alignItems: "flex-start" } },
+        sd ? h("div", { class: "dday" }, dday, h("small", {}, `${fmtShort(sd)}부터`))
+           : h("button", { class: "link", onclick: () => go("us") }, "사귄 날 정하기"),
+        h("button", { class: "navbtn", "aria-label": "설정", onclick: () => go("us") }, "⚙️"))),
   ];
   if (S.api.kind === "demo") parts.push(demoBanner());
   if (!p) parts.push(inviteCard());
+  // 새로 열린 편지가 있으면 맨 위에
+  for (const l of newLetters()) parts.push(h("button", { class: "card letter-in", onclick: () => openLetter(l.id) },
+    h("span", { class: "ev-ic" }, "💌"), h("span", { class: "grow" }, h("span", { class: "upc-t" }, `${josa(nick(l.from_user), "의")} 편지가 도착했어요`),
+      h("span", { class: "sub" }, l.title || "눌러서 읽어 보세요"))));
   parts.push(roomEl(false));
   parts.push(h("div", { class: "room-bar" }, h("span", { class: "hearts" }, `♥ ${Math.max(0, hearts())}`),
     h("button", { class: "btn sm soft", onclick: openRoomEditor }, "🛋️ 방 꾸미기")));
   parts.push(qCard(todayQ(), "오늘의 질문"));
+  if (!S.memories || S.memories.for !== today()) loadMemories();
+  parts.push(memoryCard());
   // 다가오는 날: 기념일 + 생일·일정 중 가까운 3개. 누르면 그날 캘린더가 열린다
   const up = upcoming(3);
   if (up.length) parts.push(h("div", { class: "card upc" }, h("div", { class: "sec", style: { margin: "0 0 4px" } }, "다가오는 날"),
@@ -1085,7 +1280,7 @@ async function renderCal() {
   if (!S.entries[ym]) {
     view(h("div", { class: "spin" }));
     try { await loadMonth(ym); } catch (err) { toast(errMsg(err)); S.entries[ym] = []; }
-    if (S.tab !== "cal" || S.calMonth !== ym) return;
+    if (S.tab !== "mem" || S.sub.mem !== "cal" || S.calMonth !== ym) return;
   }
   const [y, m] = ym.split("-").map(Number);
   const first = new Date(y, m - 1, 1).getDay(), days = new Date(y, m, 0).getDate();
@@ -1098,7 +1293,7 @@ async function renderCal() {
     const ph = list.find((e) => e.thumb_path && S.urls[e.thumb_path]);
     const evs = eventsOn(ds), dn = doneOn(ds), an = annivLabel(ds);
     const lab = an || (evs[0] && evs[0].title);       // 칸 아래 글: 기념일 > 일정 이름
-    const icons = [...new Set([...evs.map((e) => e.icon), ...dn.map(doneIcon)])].slice(0, 3).join("");
+    const icons = [...new Set([...evs.map((e) => e.icon), ...dn.map(doneIcon), ...lettersOn(ds).map(() => "💌")])].slice(0, 3).join("");
     const cell = h("button", { class: "day" + (ph ? " photo" : "") + (ds === t ? " today" : ""), "aria-label": fmtDate(ds), onclick: () => openDay(ds) },
       h("span", { class: "n" }, d), list.length && !ph ? h("i", { class: "memo" }) : null,
       icons ? h("span", { class: "ev" + (lab ? " up" : "") }, icons) : null,
@@ -1111,7 +1306,8 @@ async function renderCal() {
       monthItems.push({ ds, ev: e.id, icon: e.icon, title: e.title,
         sub: e.repeat === "weekly" ? `매주 ${weekday(e.day)}요일` : e.repeat !== "none" ? REPEAT[e.repeat] : "" });
     }
-    for (const w of dn) monthItems.push({ ds, icon: doneIcon(w), title: w.title, sub: w.kind === "movie" ? "같이 봤어요" : "다녀왔어요" });
+    for (const w of dn) monthItems.push({ ds, icon: doneIcon(w), title: w.title, sub: kindOf(w).verb });
+    for (const l of lettersOn(ds)) monthItems.push({ ds, icon: "💌", title: `${josa(nick(l.from_user), "의")} 편지 열리는 날`, sub: l.locked ? "잠김" : "열림" });
   }
   const photos = rows.filter((e) => e.photo_path).length;
   view(
@@ -1161,12 +1357,16 @@ function drawDay(ds) {
   const out = [h("div", {}, h("div", { class: "h2" }, fmtDate(ds)),
     h("div", { class: "row", style: { marginTop: "4px" } }, lab ? h("span", { class: "chip" }, `${lab} ♥`) : null, n > 0 ? h("span", { class: "tiny" }, `우리 ${n}일째`) : null))];
   if (evs.length) out.push(h("div", { class: "list" }, evs.map((e) => evRow(e, ds))));
+  const lt = lettersOn(ds);
+  if (lt.length) out.push(h("div", { class: "list" }, lt.map((l) => h("button", { class: "it", onclick: () => openLetter(l.id) },
+    h("span", { class: "ev-ic" }, "💌"), h("span", { class: "grow" }, h("span", { class: "wt" }, `${josa(nick(l.from_user), "의")} 편지가 열리는 날`),
+      h("span", { class: "tiny" }, l.title || (l.locked ? "아직 잠겨 있어요" : "열렸어요")))))));
   // 지도에서 '다녀왔어요', 영화에서 '같이 봤어요'를 고른 날이면 여기 뜬다
   if (dn.length) out.push(h("div", { class: "sec" }, "이날 같이 한 것"), h("div", { class: "qlist" }, dn.map((w) => {
     const parent = w.parent_id && wishById(w.parent_id);
     return h("button", { class: "qitem", onclick: () => openWish(w.id) }, h("span", { class: "st" }, doneIcon(w)),
       h("span", { class: "t" }, h("span", { class: "wt" }, w.title),
-        h("span", { class: "tiny wsub" }, w.kind === "movie" ? "같이 본 영화" : parent ? `${parent.title}에서` : "다녀온 곳")));
+        h("span", { class: "tiny wsub" }, w.kind === "place" && parent ? `${parent.title}에서` : kindOf(w).calSub)));
   })));
   out.push(S.evForm ? eventForm()
     : S.eventsErr ? h("div", { class: "banner" }, S.eventsErr)
@@ -1256,7 +1456,7 @@ function entryForm(ds) {
       const e = await S.api.addEntry({ day: ds, memo: F.memo.trim(), photo, thumb });
       const ym = ds.slice(0, 7);
       if (S.entries[ym]) S.entries[ym].push(e);
-      S.entryCount++;
+      S.entryCount++; entriesChanged();
       if (photo) { S.urls[e.photo_path] = URL.createObjectURL(photo); S.urls[e.thumb_path] = URL.createObjectURL(thumb); }
       if (F.preview) URL.revokeObjectURL(F.preview);
       F.photo = null; F.preview = null; F.memo = "";
@@ -1280,7 +1480,7 @@ async function delEntry(e) {
   try { await S.api.deleteEntry(e); } catch (err) { return toast(errMsg(err)); }
   const ym = e.day.slice(0, 7);
   if (S.entries[ym]) S.entries[ym] = S.entries[ym].filter((x) => x.id !== e.id);
-  S.entryCount = Math.max(0, S.entryCount - 1);
+  S.entryCount = Math.max(0, S.entryCount - 1); entriesChanged();
   drawSheet(); renderTab();
 }
 
@@ -1292,12 +1492,11 @@ function qItem(q) {
 }
 const lastAt = (qid) => Object.values(S.answers[qid] || {}).reduce((a, x) => (x.created_at > a ? x.created_at : a), "");
 function renderQ() {
-  if (S.qCat === "movie") return renderMovies();
   if (S.qCat) return renderQCat(S.qCat);
   const both = Q.filter((q) => bothAnswered(q.id)).sort((a, b) => (lastAt(a.id) < lastAt(b.id) ? 1 : -1));
   const tq = todayQ();
   const wait = waitingQs().filter((q) => q !== tq);      // 오늘의 질문은 바로 위 카드에 있으니 빼고
-  const parts = [h("div", { class: "title" }, "질문"), qCard(tq, "오늘의 질문")];
+  const parts = [qCard(tq, "오늘의 질문")];
   if (wait.length) parts.push(h("div", { class: "sec" }, `${josa(nick(pid()), "가")} 먼저 답한 질문 · ${wait.length}개`), h("div", { class: "qlist" }, wait.slice(0, 5).map(qItem)));
   parts.push(h("div", { class: "sec" }, "카테고리"), h("div", { class: "cats" }, DATA.categories.map((c) => {
     const qs = Q.filter((q) => q.cat === c.id), done = qs.filter((q) => bothAnswered(q.id)).length;
@@ -1305,7 +1504,7 @@ function renderQ() {
       h("span", { class: "ic" }, c.ic), h("span", { class: "nm" }, c.name), h("span", { class: "tiny" }, c.desc),
       h("div", { class: "bar" }, h("i", { style: { width: `${Math.round(done / qs.length * 100)}%` } })),
       h("span", { class: "tiny" }, `${done} / ${qs.length}`));
-  }), movieCard()));
+  })));
   parts.push(h("div", { class: "sec" }, `우리의 대화 · ${both.length}개`),
     both.length ? h("div", { class: "qlist" }, both.slice(0, 10).map(qItem)) : h("p", { class: "empty" }, "둘 다 답한 질문이 여기에 쌓여요"));
   view(...parts);
@@ -1364,7 +1563,7 @@ function renderBal() {
   const both = order.filter((b) => pickOf(b.id, me()) && pickOf(b.id, p));
   const same = both.filter((b) => pickOf(b.id, me()) === pickOf(b.id, p));
   const cur = (S.balShow && BMAP[S.balShow]) || order.find((b) => !pickOf(b.id, me()));
-  const parts = [h("div", { class: "title" }, "밸런스 게임"),
+  const parts = [
     h("div", { class: "card match" },
       h("div", { class: "pct" }, both.length ? `${Math.round(same.length / both.length * 100)}%` : "–"),
       h("div", {}, h("div", { class: "h2" }, "우리 일치율"),
@@ -1419,19 +1618,35 @@ function kidsSummary(id) {
   for (const k of kidsOf(id)) n[k.place_cat || "etc"] = (n[k.place_cat || "etc"] || 0) + 1;
   return Object.keys(PCAT).filter((c) => n[c]).map((c) => `${PCAT[c].ic}${n[c]}`).join(" ");
 }
+// 목록 종류마다 다른 말들 (영화 · 버킷리스트 · 장소)
+const KIND = {
+  movie: { name: "영화", chip: "🎬 같이 볼 영화", todoIc: "🍿", doneIc: "🎞️", cal: "🎬", calSub: "같이 본 영화", verb: "같이 봤어요",
+    ask: "같이 봤나요? 본 날을 골라 주세요", edit: "제목·메모 고치기", titlePh: "영화 제목", revPh: "한 줄 감상 (선택)",
+    desc: "보고 싶은 영화를 적어 두고, 같이 본 다음엔 둘 다 별점을 남겨요. 별점은 둘 다 남겨야 서로 보여요.",
+    addPh: "보고 싶은 영화 제목", seg: ["볼 영화", "본 영화"], dup: ["이미 목록에 있는 영화예요", "이미 같이 본 영화예요"], added: "🎬 목록에 담았어요",
+    emptyTodo: "보고 싶은 영화를 위에 적어 보세요", emptyDone: "같이 본 영화가 여기에 쌓여요" },
+  bucket: { name: "버킷리스트", chip: "🌟 버킷리스트", todoIc: "🌟", doneIc: "🏆", cal: "🏆", calSub: "이룬 버킷리스트", verb: "이뤘어요",
+    ask: "같이 이뤘나요? 이룬 날을 골라 주세요", edit: "내용·메모 고치기", titlePh: "하고 싶은 것", revPh: "한 줄 소감 (선택)",
+    desc: "언젠가 꼭 같이 해 보고 싶은 것들이에요. 이룬 날은 캘린더에도 남고, 둘 다 별점과 소감을 남겨요.",
+    addPh: "같이 하고 싶은 것 (예: 커플링 맞추기)", seg: ["할 것", "이룬 것"], dup: ["이미 목록에 있어요", "이미 이룬 거예요"], added: "🌟 버킷리스트에 담았어요",
+    emptyTodo: "같이 하고 싶은 걸 위에 적어 보세요", emptyDone: "이룬 것들이 여기에 쌓여요" },
+  place: { name: "장소", cal: "📍", calSub: "다녀온 곳", verb: "다녀왔어요", ask: "같이 다녀왔나요? 다녀온 날을 골라 주세요",
+    edit: "분류·메모 고치기", titlePh: "장소 이름", revPh: "한 줄 후기 (선택)" },
+};
+const kindOf = (w) => KIND[w.kind] || KIND.place;
 function wishItem(w) {
-  const movie = w.kind === "movie", pc = PCAT[w.place_cat] || PCAT.etc;
-  const ic = movie ? (w.done_on ? "🎞️" : "🍿") : pc.ic;
-  const base = w.done_on ? `${fmtShort(w.done_on)} ${movie ? "같이 봤어요" : "다녀왔어요"}`
-    : (w.memo || (movie ? `${josa(nick(w.added_by), "가")} 담았어요` : (w.address || "")));
-  const sub = !movie && !w.parent_id ? [kidsSummary(w.id), base].filter(Boolean).join(" · ") : base;
+  const K = kindOf(w), place = w.kind === "place", pc = PCAT[w.place_cat] || PCAT.etc;
+  const ic = place ? pc.ic : (w.done_on ? K.doneIc : K.todoIc);
+  const base = w.done_on ? `${fmtShort(w.done_on)} ${K.verb}`
+    : (w.memo || (place ? (w.address || "") : `${josa(nick(w.added_by), "가")} 담았어요`));
+  const sub = place && !w.parent_id ? [kidsSummary(w.id), base].filter(Boolean).join(" · ") : base;
   let right = null;
   if (w.done_on) {
     const mine = revOf(w.id, me()), theirs = revOf(w.id, pid());
     right = mine && theirs ? `★ ${((mine.stars + theirs.stars) / 2).toFixed(1).replace(/\.0$/, "")}`
       : theirs ? "🔒" : mine ? "⏳" : "별점 ☆";
   }
-  return h("button", { class: "qitem", onclick: () => (movie ? openWish(w.id) : openPlace(w)) },
+  return h("button", { class: "qitem", onclick: () => (place ? openPlace(w) : openWish(w.id)) },
     h("span", { class: "st" }, ic),
     h("span", { class: "t" }, h("span", { class: "wt" }, w.title), sub ? h("span", { class: "tiny wsub" }, sub) : null),
     right ? h("span", { class: "wr" }, right) : null);
@@ -1454,25 +1669,25 @@ function openWish(id) {
 function drawWish(id) {
   const w = wishById(id);
   if (!w) return h("p", { class: "empty" }, "지워진 항목이에요");
-  const movie = w.kind === "movie", verb = movie ? "같이 봤어요" : "다녀왔어요", pc = PCAT[w.place_cat] || PCAT.etc;
+  const K = kindOf(w), place = w.kind === "place", verb = K.verb, pc = PCAT[w.place_cat] || PCAT.etc;
   const parent = w.parent_id && wishById(w.parent_id);
   const out = [h("div", { class: "row", style: { flexWrap: "wrap", gap: "6px" } },
-    h("span", { class: "chip sky" }, movie ? "🎬 같이 볼 영화" : `${pc.ic} ${pc.name}`),
+    h("span", { class: "chip sky" }, place ? `${pc.ic} ${pc.name}` : K.chip),
     parent ? h("span", { class: "chip gray" }, `📍 ${parent.title}에서 갈 곳`) : null)];
   if (S.wishEdit) out.push(wishEditForm(w));
   else {
     out.push(h("div", { class: "q-big" }, w.title));
-    if (!movie && w.address) out.push(h("div", { class: "sub", style: { marginTop: "-8px" } }, w.address));
+    if (place && w.address) out.push(h("div", { class: "sub", style: { marginTop: "-8px" } }, w.address));
     if (w.memo) out.push(h("div", { class: "ans" }, h("span", { class: "who" }, "메모"), h("div", { class: "txt" }, w.memo)));
     out.push(h("div", { class: "row tiny" },
       h("span", { class: "grow" }, `${josa(nick(w.added_by), "가")} 담음 · ${fmtShort(ymd(new Date(w.created_at)))}`),
-      h("button", { class: "link", onclick: () => { S.wishEdit = true; drawSheet(); } }, movie ? "제목·메모 고치기" : "분류·메모 고치기")));
-    if (!movie && w.place_url) out.push(h("a", { class: "btn sm line", href: w.place_url, target: "_blank", rel: "noopener" }, "카카오맵에서 자세히 보기"));
+      h("button", { class: "link", onclick: () => { S.wishEdit = true; drawSheet(); } }, K.edit)));
+    if (place && w.place_url) out.push(h("a", { class: "btn sm line", href: w.place_url, target: "_blank", rel: "noopener" }, "카카오맵에서 자세히 보기"));
   }
   if (!w.done_on) {
     const d = h("input", { class: "input", type: "date", max: today(), value: today() });
     out.push(h("div", { class: "card", style: col() },
-      h("div", { class: "sec", style: { margin: 0 } }, movie ? "같이 봤나요? 본 날을 골라 주세요" : "같이 다녀왔나요? 다녀온 날을 골라 주세요"), d,
+      h("div", { class: "sec", style: { margin: 0 } }, K.ask), d,
       h("button", { class: "btn wide", onclick: () => setDone(w, d.value || today()) }, `✅ ${verb}`)));
   } else {
     out.push(h("div", { class: "row" }, h("span", { class: "chip mint" }, `✅ ${fmtDate(w.done_on)}에 ${verb}`), h("span", { class: "grow" }),
@@ -1492,23 +1707,23 @@ function pcatPicker(cur, onPick) {
   return wrap;
 }
 function wishEditForm(w) {
-  const movie = w.kind === "movie";
-  const t = h("input", { class: "input", maxlength: 100, placeholder: movie ? "영화 제목" : "장소 이름" });
+  const place = w.kind === "place";
+  const t = h("input", { class: "input", maxlength: 100, placeholder: kindOf(w).titlePh });
   t.value = w.title;
   const m = h("textarea", { class: "textarea", maxlength: 500, placeholder: "메모 (선택)", style: { minHeight: "80px" } });
   m.value = w.memo || "";
   let cat = w.place_cat || "etc";
   const save = h("button", { class: "btn grow", onclick: async () => {
     const title = t.value.trim();
-    if (!title) return toast(movie ? "제목을 적어 주세요" : "이름을 적어 주세요");
+    if (!title) return toast("이름을 적어 주세요");
     const patch = { title, memo: m.value.trim() };
-    if (!movie) patch.place_cat = cat;
+    if (place) patch.place_cat = cat;
     save.disabled = true;
     try { await S.api.updateWish(w.id, patch); } catch (err) { save.disabled = false; return toast(errMsg(err)); }
     Object.assign(w, patch); S.wishEdit = false;
     drawSheet(); renderTab(); toast("고쳤어요");
   } }, "저장");
-  return h("div", { class: "field" }, t, movie ? null : pcatPicker(cat, (k) => { cat = k; }), m,
+  return h("div", { class: "field" }, t, place ? pcatPicker(cat, (k) => { cat = k; }) : null, m,
     h("div", { class: "row" }, h("button", { class: "btn line grow", onclick: () => { S.wishEdit = false; drawSheet(); } }, "취소"), save));
 }
 async function setDone(w, day) {
@@ -1519,7 +1734,7 @@ async function setDone(w, day) {
 }
 async function delWish(w) {
   const kids = kidsOf(w.id);
-  if (!confirm(`‘${w.title}’ ${w.kind === "movie" ? "영화" : "장소"}를 목록에서 지울까요?\n`
+  if (!confirm(`‘${w.title}’ ${josa(kindOf(w).name, "를")} 목록에서 지울까요?\n`
     + `${kids.length ? `안에 추가한 곳 ${kids.length}개와 ` : ""}남긴 별점도 같이 지워져요.`)) return;
   try { await S.api.deleteWish(w.id); } catch (err) { return toast(errMsg(err)); }
   const gone = new Set([w.id, ...kids.map((k) => k.id)]);      // 서버에서는 안에 넣은 곳도 같이 지워진다
@@ -1553,7 +1768,7 @@ function reviewForm(w, init) {
   const stars = h("div", { class: "stars" }, [1, 2, 3, 4, 5].map((n) =>
     h("button", { type: "button", class: n <= R.stars ? "on" : "", "aria-label": `별 ${n}개`, onclick: () => { R.stars = n; drawSheet(); } }, "★")));
   const ta = h("textarea", { class: "textarea", maxlength: 300, style: { minHeight: "72px" },
-    placeholder: w.kind === "movie" ? "한 줄 감상 (선택)" : "한 줄 후기 (선택)", oninput: () => { R.text = ta.value; } });
+    placeholder: kindOf(w).revPh, oninput: () => { R.text = ta.value; } });
   ta.value = R.text;
   const btn = h("button", { class: "btn wide", onclick: async () => {
     if (!R.stars) return toast("별을 눌러 점수를 골라 주세요");
@@ -1568,47 +1783,35 @@ function reviewForm(w, init) {
   return h("div", { class: "field" }, stars, ta, btn);
 }
 
-/* ---------------- 영화 (질문 탭 안) ---------------- */
-function movieCard() {
-  const all = S.wishes.filter((w) => w.kind === "movie"), done = all.filter((w) => w.done_on).length;
-  const lock = waitingRevs("movie").length;
-  return h("button", { class: "cat wide", onclick: () => { S.qCat = "movie"; renderTab(); window.scrollTo(0, 0); } },
-    h("div", { class: "row" }, h("span", { class: "ic" }, "🎬"), h("span", { class: "nm grow" }, "같이 볼 영화"),
-      lock ? h("span", { class: "chip" }, `🔒 ${lock}`) : null),
-    h("span", { class: "tiny" }, "보고 싶은 영화를 모아 두고, 같이 본 뒤엔 별점을 남겨요"),
-    h("span", { class: "tiny" }, `볼 영화 ${all.length - done}편 · 본 영화 ${done}편`));
-}
-function renderMovies() {
-  const all = S.wishes.filter((w) => w.kind === "movie");
+/* ---------------- 함께: 영화 · 버킷리스트 ---------------- */
+function renderWishList(kind) {
+  const K = KIND[kind], all = S.wishes.filter((w) => w.kind === kind);
   const todo = all.filter((w) => !w.done_on), done = all.filter((w) => w.done_on);
-  const showDone = S.wishTab.movie === "done", list = sortWishes(showDone ? done : todo, showDone);
+  const showDone = S.wishTab[kind] === "done", list = sortWishes(showDone ? done : todo, showDone);
   view(
-    h("div", { class: "row" }, h("button", { class: "navbtn", "aria-label": "뒤로", onclick: () => { S.qCat = null; renderTab(); } }, "‹"),
-      h("div", { class: "title grow" }, "🎬 같이 볼 영화")),
-    h("p", { class: "sub" }, "보고 싶은 영화를 적어 두고, 같이 본 다음엔 둘 다 별점을 남겨요. 별점은 둘 다 남겨야 서로 보여요."),
-    wishNote() || addMovieForm(),
-    wishSeg("movie", todo.length, done.length, ["볼 영화", "본 영화"]),
-    list.length ? h("div", { class: "qlist" }, list.map(wishItem))
-      : h("p", { class: "empty" }, showDone ? "같이 본 영화가 여기에 쌓여요" : "보고 싶은 영화를 위에 적어 보세요"),
+    h("p", { class: "sub" }, K.desc),
+    wishNote() || addWishForm(kind),
+    wishSeg(kind, todo.length, done.length, K.seg),
+    list.length ? h("div", { class: "qlist" }, list.map(wishItem)) : h("p", { class: "empty" }, showDone ? K.emptyDone : K.emptyTodo),
   );
 }
-function addMovieForm() {
-  const k = "movie-new";
-  const inp = h("input", { class: "input grow", placeholder: "보고 싶은 영화 제목", maxlength: 100, "data-k": k, enterkeyhint: "done",
+function addWishForm(kind) {
+  const K = KIND[kind], k = kind + "-new";
+  const inp = h("input", { class: "input grow", placeholder: K.addPh, maxlength: 100, "data-k": k, enterkeyhint: "done",
     oninput: () => { S.drafts[k] = inp.value; } });
   inp.value = S.drafts[k] || "";
   const btn = h("button", { class: "btn", type: "submit" }, "담기");
   return h("form", { class: "row", onsubmit: async (e) => {
     e.preventDefault();
     const t = inp.value.trim();
-    if (!t) return toast("영화 제목을 적어 주세요");
-    const dup = S.wishes.find((w) => w.kind === "movie" && norm(w.title) === norm(t));
-    if (dup) return toast(dup.done_on ? "이미 같이 본 영화예요" : "이미 목록에 있는 영화예요");
+    if (!t) return toast("내용을 적어 주세요");
+    const dup = S.wishes.find((w) => w.kind === kind && norm(w.title) === norm(t));
+    if (dup) return toast(dup.done_on ? K.dup[1] : K.dup[0]);
     btn.disabled = true;
     let w;
-    try { w = await S.api.addWish({ kind: "movie", title: t }); } catch (err) { btn.disabled = false; return toast(errMsg(err)); }
-    S.wishes.push(w); S.drafts[k] = ""; S.wishTab.movie = "todo";
-    renderTab(); toast("🎬 목록에 담았어요");
+    try { w = await S.api.addWish({ kind, title: t }); } catch (err) { btn.disabled = false; return toast(errMsg(err)); }
+    S.wishes.push(w); S.drafts[k] = ""; S.wishTab[kind] = "todo";
+    renderTab(); toast(K.added);
   } }, inp, btn);
 }
 
@@ -1869,6 +2072,410 @@ function drawNewPlace(r, F, parent) {
   ];
 }
 
+/* ---------------- 추억: 앨범 (캘린더 사진 모아보기) ---------------- */
+async function loadAlbum() {
+  const A = S.album || (S.album = { list: [], done: false, loading: false });
+  if (A.loading || A.done) return;
+  A.loading = true;
+  try {
+    const rows = await S.api.loadPhotos(A.list.length, 60);
+    A.list.push(...rows);
+    if (rows.length < 60) A.done = true;
+    const need = rows.map((r) => r.thumb_path).filter((p) => p && !S.urls[p]);
+    for (let i = 0; i < need.length; i += 100) Object.assign(S.urls, await S.api.urls(need.slice(i, i + 100)));
+  } catch (e) { console.warn(e); toast(errMsg(e)); A.done = true; }
+  A.loading = false;
+  if (S.tab === "mem" && S.sub.mem === "album") renderTab();
+}
+function renderAlbum() {
+  const A = S.album;
+  if (!A) { view(h("div", { class: "spin" })); loadAlbum(); return; }
+  if (!A.list.length) return view(A.loading ? h("div", { class: "spin" }) : h("p", { class: "empty" }, "캘린더에 사진을 남기면 여기 모여요"));
+  const groups = [];          // 달별로 묶는다 (최근 달부터)
+  for (const e of A.list) {
+    const ym = e.day.slice(0, 7);
+    if (!groups.length || groups[groups.length - 1].ym !== ym) groups.push({ ym, items: [] });
+    groups[groups.length - 1].items.push(e);
+  }
+  view(
+    h("p", { class: "sub" }, `사진 ${A.list.length}${A.done ? "" : "+"}장 · 누르면 그날 기록이 열려요`),
+    groups.map((g) => [
+      h("div", { class: "sec" }, `${Number(g.ym.slice(0, 4))}년 ${Number(g.ym.slice(5))}월 · ${g.items.length}장`),
+      h("div", { class: "album" }, g.items.map((e) => {
+        const b = h("button", { class: "ph", "aria-label": `${fmtDate(e.day)} 사진`, onclick: () => openDay(e.day) }, h("span", {}, Number(e.day.slice(8))));
+        if (S.urls[e.thumb_path]) b.style.backgroundImage = `url("${S.urls[e.thumb_path]}")`;
+        return b;
+      })),
+    ]),
+    A.done ? null : h("button", { class: "btn wide line", onclick: loadAlbum }, A.loading ? "불러오는 중…" : "더 보기"));
+}
+
+/* ---------------- 추억: 타임캡슐 편지 ---------------- */
+const seenKey = () => "duriseo_seen_letters_" + me();
+function seenLetters() { try { return new Set(JSON.parse(localStorage.getItem(seenKey()) || "[]")); } catch (e) { return new Set(); } }
+function markSeen(id) {
+  const s = seenLetters(); s.add(id);
+  try { localStorage.setItem(seenKey(), JSON.stringify([...s])); } catch (e) { /* 무시 */ }
+}
+// 받은 편지 중 열린 지 7일이 안 됐고, 이 폰에서 아직 안 읽은 것
+function newLetters() {
+  const t = today(), seen = seenLetters();
+  return S.letters.filter((l) => l.from_user !== me() && !l.locked && daysBetween(l.open_on, t) <= 7 && !seen.has(l.id));
+}
+function renderLetters() {
+  if (S.lettersErr) return view(h("div", { class: "banner" }, S.lettersErr));
+  const toMe = S.letters.filter((l) => l.from_user !== me()), mine = S.letters.filter((l) => l.from_user === me());
+  const opened = toMe.filter((l) => !l.locked).sort((a, b) => (a.open_on < b.open_on ? 1 : -1)), waiting = toMe.filter((l) => l.locked);
+  view(
+    h("p", { class: "sub" }, "정한 날이 돼야 열리는 편지예요. 그 전에는 받는 사람도 제목과 날짜만 볼 수 있어요."),
+    h("button", { class: "btn wide", onclick: openLetterForm }, "💌 편지 쓰기"),
+    waiting.length ? [h("div", { class: "sec" }, `기다리는 편지 ${waiting.length}`), h("div", { class: "qlist" }, waiting.map(letterItem))] : null,
+    h("div", { class: "sec" }, `받은 편지 ${opened.length}`),
+    opened.length ? h("div", { class: "qlist" }, opened.map(letterItem)) : h("p", { class: "empty" }, "열린 편지가 여기에 쌓여요"),
+    mine.length ? [h("div", { class: "sec" }, `내가 쓴 편지 ${mine.length}`), h("div", { class: "qlist" }, mine.map(letterItem))] : null);
+}
+// 올해면 '11월 21일 (토)', 다른 해면 '2027.8.14'
+const fmtWhen = (ds) => (ds.slice(0, 4) === today().slice(0, 4) ? fmtDate(ds) : fmtShort(ds));
+function letterItem(l) {
+  const mineL = l.from_user === me(), isNew = !mineL && newLetters().some((x) => x.id === l.id);
+  const when = l.locked ? `${fmtWhen(l.open_on)}에 열려요 · D-${daysBetween(today(), l.open_on)}` : `${fmtShort(l.open_on)} 열림`;
+  return h("button", { class: "qitem", onclick: () => openLetter(l.id) },
+    h("span", { class: "st" }, l.locked ? "🔒" : "💌"),
+    h("span", { class: "t" }, h("span", { class: "wt" }, l.title || (mineL ? `${nick(pid())}에게` : `${josa(nick(l.from_user), "의")} 편지`)),
+      h("span", { class: "tiny wsub" }, (mineL ? "내가 씀 · " : "") + when)),
+    isNew ? h("span", { class: "chip" }, "새 편지") : null);
+}
+function openLetter(id) {
+  const l = S.letters.find((x) => x.id === id);
+  openSheet(() => drawLetter(id));
+  if (l && !l.locked && l.from_user !== me()) { markSeen(id); renderTab(); }    // 읽었으니 '새 편지' 표시를 지운다
+}
+function drawLetter(id) {
+  const l = S.letters.find((x) => x.id === id);
+  if (!l) return h("p", { class: "empty" }, "지워진 편지예요");
+  const mineL = l.from_user === me(), n = daysBetween(today(), l.open_on);
+  const out = [h("span", { class: "chip sky", style: { alignSelf: "flex-start" } }, mineL ? `💌 ${nick(pid())}에게 쓴 편지` : `💌 ${josa(nick(l.from_user), "의")} 편지`)];
+  if (l.title) out.push(h("div", { class: "q-big" }, l.title));
+  out.push(h("div", { class: "tiny" }, `${fmtShort(ymd(new Date(l.created_at)))}에 씀 · ${fmtWhen(l.open_on)}에 열림`));
+  if (l.body != null) out.push(h("div", { class: "letter" }, l.body));
+  if (l.locked) out.push(h("div", { class: "lock" }, `🔒 ${fmtWhen(l.open_on)}에 열려요 · D-${n}`, h("br"),
+    mineL ? `그 전까지 ${josa(nick(pid()), "는")} 제목과 날짜만 볼 수 있어요` : "그날까지 조금만 기다려요"));
+  if (mineL) out.push(h("button", { class: "btn ghost", onclick: () => delLetter(l) }, "편지 지우기"));
+  return out;
+}
+// 열릴 날 빠른 선택: 다음 기념일 · 한 달 뒤 · 1년 뒤 · 다가오는 생일
+function letterDates() {
+  const t = today(), [y, m, d] = t.split("-").map(Number), out = [];
+  const na = nextAnniv();
+  if (na && na.in > 0) out.push([`${na.label} 기념일`, na.date]);
+  out.push(["한 달 뒤", clampYmd(m === 12 ? y + 1 : y, m === 12 ? 1 : m + 1, d)], ["1년 뒤", clampYmd(y + 1, m, d)]);
+  const bd = S.events.filter((e) => e.icon === "🎂").map((e) => [e.title, nextOcc(e, addDays(t, 1))]).filter((x) => x[1])
+    .sort((a, b) => (a[1] < b[1] ? -1 : 1))[0];
+  if (bd) out.push(bd);
+  return out;
+}
+function openLetterForm() {
+  const F = { title: "", body: "", open_on: "" };
+  openSheet(() => drawLetterForm(F));
+}
+function drawLetterForm(F) {
+  const to = nick(pid());
+  const title = h("input", { class: "input", maxlength: 100, placeholder: "제목 (선택 · 잠겨 있어도 보여요)", oninput: () => { F.title = title.value; } });
+  title.value = F.title;
+  const date = h("input", { class: "input", type: "date", min: addDays(today(), 1), value: F.open_on, onchange: () => { F.open_on = date.value; drawSheet(); } });
+  const quick = h("div", { class: "pcats" }, letterDates().map(([label, ds]) =>
+    h("button", { type: "button", class: F.open_on === ds ? "on" : "", onclick: () => { F.open_on = ds; drawSheet(); } }, `${label} · ${fmtShort(ds)}`)));
+  const body = h("textarea", { class: "textarea", maxlength: 5000, placeholder: `${to}에게 하고 싶은 말`, style: { minHeight: "180px" },
+    oninput: () => { F.body = body.value; } });
+  body.value = F.body;
+  const save = h("button", { class: "btn wide", onclick: async () => {
+    if (!F.body.trim()) return toast("편지 내용을 적어 주세요");
+    if (!F.open_on || F.open_on <= today()) return toast("열릴 날을 내일 이후로 골라 주세요");
+    save.disabled = true;
+    try { await S.api.addLetter({ title: F.title.trim(), body: F.body.trim(), open_on: F.open_on }); await loadLetterData(); }
+    catch (err) { save.disabled = false; return toast(errMsg(err)); }
+    closeSheet(); renderTab(); toast(`💌 편지를 묻었어요 · ${fmtDate(F.open_on)}에 열려요`);
+  } }, "💌 편지 묻기");
+  return [
+    h("div", { class: "h2" }, `${to}에게 쓰는 타임캡슐 편지`),
+    h("p", { class: "sub" }, "정한 날이 되기 전까지는 받는 사람이 내용을 볼 수 없어요. 묻은 뒤에는 고칠 수 없어요."),
+    h("div", { class: "field" }, h("label", {}, "열릴 날"), quick, date), title, body, save,
+  ];
+}
+async function delLetter(l) {
+  if (!confirm("이 편지를 지울까요? 되돌릴 수 없어요.")) return;
+  try { await S.api.deleteLetter(l.id); await loadLetterData(); } catch (err) { return toast(errMsg(err)); }
+  closeSheet(); renderTab(); toast("지웠어요");
+}
+
+/* ---------------- 통계 ---------------- */
+// 색: 나 · 상대 (색약 구별·대비 검사 통과한 짝), 월별 막대는 한 가지 색으로 고른 달만 진하게
+const C_ME = "#E8577A", C_YOU = "#4A86E0", C_BAR = "#2E9C80", C_BAR_DIM = "#CFE9E1";
+async function ensureStatsRows() {
+  if (S.statsRows) return;
+  S.statsRows = "loading";
+  try { S.statsRows = await S.api.loadEntryStats(); } catch (e) { console.warn(e); S.statsRows = []; }
+  if (S.tab === "stats") renderTab();
+}
+const ymOf = (iso) => ymd(new Date(iso)).slice(0, 7);          // 서버 시각 → 이 폰 기준 달
+const lastPickAt = (id) => Object.values(S.picks[id] || {}).reduce((a, x) => (x.created_at > a ? x.created_at : a), "");
+const shiftYm = (ym, n) => { const [y, m] = ym.split("-").map(Number), d = new Date(y, m - 1 + n, 1); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; };
+function monthStats(ym) {
+  const rows = Array.isArray(S.statsRows) ? S.statsRows : [], p = pid(), my = me();
+  const ents = rows.filter((r) => r.day.slice(0, 7) === ym);
+  const ans = [], picks = [];
+  for (const by of Object.values(S.answers)) for (const [u, a] of Object.entries(by)) if (ymOf(a.created_at) === ym) ans.push(u);
+  for (const by of Object.values(S.picks)) for (const [u, x] of Object.entries(by)) if (ymOf(x.created_at) === ym) picks.push(u);
+  const bothB = BAL.filter((b) => pickOf(b.id, my) && pickOf(b.id, p) && ymOf(lastPickAt(b.id)) === ym);
+  const same = bothB.filter((b) => pickOf(b.id, my) === pickOf(b.id, p)).length;
+  const done = (kind) => S.wishes.filter((w) => w.kind === kind && w.done_on && w.done_on.slice(0, 7) === ym).length;
+  const added = (u) => S.wishes.filter((w) => w.added_by === u && ymOf(w.created_at) === ym).length;
+  const cnt = (arr, u) => arr.filter((x) => x === u).length;
+  return {
+    entries: ents.length, photos: ents.filter((r) => r.photo).length,
+    bothQ: Q.filter((q) => bothAnswered(q.id) && ymOf(lastAt(q.id)) === ym).length,
+    match: bothB.length ? Math.round(same / bothB.length * 100) : null, matchN: bothB.length,
+    places: done("place"), movies: done("movie"), buckets: done("bucket"),
+    hearts: ents.length * H.entry + ans.length * H.answer + picks.length * H.pick,
+    per: [["기록", cnt(ents.map((r) => r.user_id), my), cnt(ents.map((r) => r.user_id), p)],
+          ["질문 답", cnt(ans, my), cnt(ans, p)], ["밸런스", cnt(picks, my), cnt(picks, p)], ["목록 담기", added(my), added(p)]],
+  };
+}
+function tile(label, value, sub) {
+  return h("div", { class: "tile" }, h("div", { class: "tl" }, label), h("div", { class: "tv" }, value), sub ? h("div", { class: "ts" }, sub) : null);
+}
+function renderStats() {
+  if (!Array.isArray(S.statsRows)) { ensureStatsRows(); return view(h("div", { class: "title" }, "통계"), h("div", { class: "spin" })); }
+  const ym = S.statsMonth, [y, m] = ym.split("-").map(Number), M = monthStats(ym), prev = monthStats(shiftYm(ym, -1));
+  const p = partner(), sd = S.couple.start_date, days = sd ? Math.max(0, daysBetween(sd, today()) + 1) : null;
+  const diff = M.entries - prev.entries;
+  const delta = diff ? `지난달보다 ${diff > 0 ? "▲" : "▼"} ${Math.abs(diff)}` : "지난달과 같아요";
+  // 누가 더: 지표마다 둘 중 큰 값을 꽉 찬 길이로
+  const legend = h("div", { class: "legend" }, h("span", {}, h("i", { style: { background: C_ME } }), nick(me())),
+    p ? h("span", {}, h("i", { style: { background: C_YOU } }), nick(p.user_id)) : null);
+  const bars = h("div", { class: "pp" }, M.per.map(([label, a, b]) => {
+    const max = Math.max(a, b, 1);
+    const bar = (v, c, who) => h("div", { class: "pp-row", title: `${who} ${label} ${v}` },
+      h("span", { class: "pp-bar", style: { width: `${v / max * 100}%`, background: c, minWidth: v ? "4px" : "0" } }), h("span", { class: "pp-v" }, v));
+    return h("div", { class: "pp-item" }, h("div", { class: "pp-l" }, label), h("div", { class: "pp-bars" },
+      bar(a, C_ME, nick(me())), p ? bar(b, C_YOU, nick(p.user_id)) : null));
+  }));
+  // 월별 기록 (최근 6달): 고른 달만 진하게, 누르면 그 달로
+  const rows = S.statsRows, months = [5, 4, 3, 2, 1, 0].map((k) => shiftYm(ym, -k));
+  const counts = months.map((x) => rows.filter((r) => r.day.slice(0, 7) === x).length), cmax = Math.max(...counts, 1);
+  const cols = h("div", { class: "cols" }, months.map((x, i) => h("button", { class: "col" + (x === ym ? " on" : ""), "aria-label": `${Number(x.slice(5))}월 기록 ${counts[i]}개`,
+    title: `${Number(x.slice(5))}월 기록 ${counts[i]}개`, onclick: () => { S.statsMonth = x; renderTab(); } },
+    h("span", { class: "cv" }, counts[i]),
+    h("span", { class: "cb", style: { height: `${counts[i] / cmax * 100}%`, background: x === ym ? C_BAR : C_BAR_DIM, minHeight: counts[i] ? "4px" : "0" } }),
+    h("span", { class: "cl" }, `${Number(x.slice(5))}월`))));
+  // 지금까지
+  const allB = BAL.filter((b) => pickOf(b.id, me()) && pickOf(b.id, pid()));
+  const allSame = allB.filter((b) => pickOf(b.id, me()) === pickOf(b.id, pid())).length;
+  // 평균 별점: 상대 별점은 둘 다 남겨 열린 것만 (잠긴 별점이 평균으로 새어 나가지 않게)
+  const stars = Object.values(S.reviews).flatMap((by) => {
+    const mine = by[me()], theirs = pid() && by[pid()];
+    return [mine && mine.stars, mine && theirs && theirs.stars].filter(Boolean);
+  });
+  const spent = S.room.reduce((a, it) => a + priceOf(it.object_key), 0);
+  const doneAll = (k) => S.wishes.filter((w) => w.kind === k && w.done_on).length;
+  view(
+    h("div", { class: "title" }, "통계"),
+    days != null ? h("div", { class: "hero-n" }, h("span", { class: "hl" }, "함께한 지"), h("span", { class: "hv" }, `${days.toLocaleString()}일`)) : null,
+    h("div", { class: "cal-head" },
+      h("button", { class: "navbtn", "aria-label": "이전 달", onclick: () => { S.statsMonth = shiftYm(ym, -1); renderTab(); } }, "‹"),
+      h("div", { class: "h2" }, `${y}년 ${m}월의 우리`),
+      h("button", { class: "navbtn", "aria-label": "다음 달", disabled: ym >= today().slice(0, 7) ? true : null, onclick: () => { S.statsMonth = shiftYm(ym, 1); renderTab(); } }, "›")),
+    h("div", { class: "tiles" },
+      tile("기록", `${M.entries}개`, delta), tile("사진", `${M.photos}장`),
+      tile("둘 다 답한 질문", `${M.bothQ}개`), tile("밸런스 일치율", M.match == null ? "–" : `${M.match}%`, M.matchN ? `${M.matchN}개 중` : "둘 다 고른 게 없어요"),
+      tile("다녀온 곳", `${M.places}곳`), tile("같이 본 영화", `${M.movies}편`),
+      tile("이룬 버킷리스트", `${M.buckets}개`), tile("모은 하트", `♥ ${M.hearts}`)),
+    h("div", { class: "card", style: col(10) }, h("div", { class: "row" }, h("div", { class: "h2 grow" }, "누가 더 많이"), legend),
+      h("p", { class: "tiny" }, `${m}월 한 달 동안 한 것`), bars),
+    h("div", { class: "card", style: col(8) }, h("div", { class: "h2" }, "월별 기록"),
+      h("p", { class: "tiny" }, "막대를 누르면 그 달 통계로 바뀌어요"), cols),
+    h("div", { class: "sec" }, "지금까지 우리"),
+    h("div", { class: "tiles" },
+      tile("기록", `${rows.length}개`, `사진 ${rows.filter((r) => r.photo).length}장`),
+      tile("둘 다 답한 질문", `${Q.filter((q) => bothAnswered(q.id)).length}개`, `전체 ${Q.length}개 중`),
+      tile("밸런스 일치율", allB.length ? `${Math.round(allSame / allB.length * 100)}%` : "–", `${allB.length}개 중 ${allSame}개 같음`),
+      tile("다녀온 곳", `${doneAll("place")}곳`), tile("같이 본 영화", `${doneAll("movie")}편`), tile("이룬 버킷리스트", `${doneAll("bucket")}개`),
+      tile("주고받은 편지", `${S.letters.length}통`), tile("우리 평균 별점", stars.length ? `★ ${(stars.reduce((a, b) => a + b, 0) / stars.length).toFixed(1)}` : "–", stars.length ? `별점 ${stars.length}개` : ""),
+      tile("모은 하트", `♥ ${hearts() + spent}`, `방 꾸미기에 ♥${spent} 씀`)),
+  );
+}
+
+/* ---------------- 설정: 백업 (zip 한 개) ---------------- */
+// 압축 없이 담는 아주 작은 zip 만들기 (사진은 이미 jpg라 압축해도 거의 안 줄어든다)
+const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC_T[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function makeZip(files) {
+  const enc = new TextEncoder(), parts = [], central = [], now = new Date();
+  const time = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+  const date = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+  let offset = 0;
+  for (const f of files) {
+    const name = enc.encode(f.name), crc = crc32(f.data), size = f.data.length;
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true);   // 0x0800 = 파일 이름 UTF-8
+    lh.setUint16(10, time, true); lh.setUint16(12, date, true); lh.setUint32(14, crc, true);
+    lh.setUint32(18, size, true); lh.setUint32(22, size, true); lh.setUint16(26, name.length, true);
+    parts.push(lh.buffer, name, f.data);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true);
+    ch.setUint16(12, time, true); ch.setUint16(14, date, true); ch.setUint32(16, crc, true);
+    ch.setUint32(20, size, true); ch.setUint32(24, size, true); ch.setUint16(28, name.length, true); ch.setUint32(42, offset, true);
+    central.push(ch.buffer, name);
+    offset += 30 + name.length + size;
+  }
+  const cd = central.reduce((a, b) => a + b.byteLength, 0), end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true);
+  end.setUint32(12, cd, true); end.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, end.buffer], { type: "application/zip" });
+}
+function saveFile(blob, name) {
+  const url = URL.createObjectURL(blob), a = h("a", { href: url, download: name, style: { display: "none" } });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60e3);
+}
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+// 사람이 읽는 백업 (zip 안의 '우리의 기록.html')
+function backupHtml(d, photoName) {
+  const nm = (u) => esc(nick(u)), sec = (t, body) => (body ? `<h2>${t}</h2>${body}` : "");
+  const entries = d.entries.slice().sort((a, b) => (a.day < b.day ? 1 : -1)).map((e) =>
+    `<div class="e"><b>${esc(fmtDate(e.day))} ${e.day.slice(0, 4)}</b> · ${nm(e.user_id)}${photoName[e.photo_path] ? `<img src="${esc(photoName[e.photo_path])}">` : ""}${e.memo ? `<p>${esc(e.memo)}</p>` : ""}</div>`).join("");
+  const byQ = {};
+  for (const a of d.answers) (byQ[a.question_id] || (byQ[a.question_id] = [])).push(a);
+  const qa = Object.entries(byQ).filter(([id]) => QMAP[id]).map(([id, as]) =>
+    `<div class="e"><b>${esc(QMAP[id].text)}</b>${as.map((a) => `<p>${nm(a.user_id)}: ${esc(a.answer)}</p>`).join("")}</div>`).join("");
+  const wishes = (kind) => d.wishes.filter((w) => w.kind === kind).map((w) => `<li>${esc(w.title)}${w.done_on ? ` ✅ ${w.done_on}` : ""}${w.memo ? ` — ${esc(w.memo)}` : ""}</li>`).join("");
+  const letters = d.letters.filter((l) => l.body != null).map((l) => `<div class="e"><b>${esc(l.title || "편지")}</b> · ${nm(l.from_user)} · ${l.open_on} 열림<p>${esc(l.body)}</p></div>`).join("");
+  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>둘이서 백업</title>
+<style>body{font-family:sans-serif;max-width:720px;margin:0 auto;padding:20px;color:#3A2E2B;background:#FFF8F3;line-height:1.6}h1{color:#D9506F}h2{margin-top:32px;border-bottom:2px solid #F1E4DB}.e{background:#fff;border-radius:12px;padding:12px 14px;margin:10px 0}.e img{display:block;max-width:100%;border-radius:10px;margin-top:8px}p{white-space:pre-wrap;margin:6px 0}</style></head><body>
+<h1>${esc(nick(me()))} ♥ ${esc(nick(pid()))}</h1><p>${S.couple.start_date ? `${esc(S.couple.start_date)}부터 · ` : ""}${esc(new Date().toLocaleString())} 백업</p>
+${sec("캘린더 기록", entries)}${sec("질문과 답", qa)}${sec("같이 볼 영화", wishes("movie") && `<ul>${wishes("movie")}</ul>`)}
+${sec("가고 싶은 곳", wishes("place") && `<ul>${wishes("place")}</ul>`)}${sec("버킷리스트", wishes("bucket") && `<ul>${wishes("bucket")}</ul>`)}${sec("열린 편지", letters)}
+</body></html>`;
+}
+async function doBackup(withPhotos, btn) {
+  btn.disabled = true;
+  const label = btn.textContent;
+  btn.textContent = "만드는 중…";
+  try {
+    const d = await S.api.exportAll(), enc = new TextEncoder(), files = [], photoName = {};
+    const meta = { app: "둘이서", exported_at: new Date().toISOString(), start_date: S.couple.start_date,
+                   members: S.members.map((m) => ({ user_id: m.user_id, nickname: m.nickname })) };
+    if (withPhotos) {
+      const list = d.entries.filter((e) => e.photo_path);
+      for (let i = 0; i < list.length; i += 50) {
+        const chunk = list.slice(i, i + 50), paths = chunk.map((e) => e.photo_path);
+        const urls = S.api.photoData ? Object.fromEntries(paths.map((p) => [p, S.api.photoData(p)])) : await S.api.urls(paths);
+        for (const e of chunk) {
+          if (!urls[e.photo_path]) continue;
+          try {
+            const data = new Uint8Array(await (await fetch(urls[e.photo_path])).arrayBuffer());
+            const name = `사진/${e.day}_${e.id.slice(0, 8)}.jpg`;
+            files.push({ name, data }); photoName[e.photo_path] = name;
+          } catch (err) { console.warn(err); }
+        }
+        btn.textContent = `사진 받는 중… ${Math.min(i + 50, list.length)}/${list.length}`;
+      }
+    }
+    files.unshift({ name: "data.json", data: enc.encode(JSON.stringify({ ...meta, ...d }, null, 2)) },
+                  { name: "우리의 기록.html", data: enc.encode(backupHtml(d, photoName)) });
+    saveFile(makeZip(files), `둘이서-백업-${today()}.zip`);
+    toast(withPhotos ? `백업 파일을 받았어요 (사진 ${Object.keys(photoName).length}장)` : "백업 파일을 받았어요");
+  } catch (err) { console.warn(err); toast(errMsg(err)); }
+  btn.disabled = false; btn.textContent = label;
+}
+
+/* ---------------- 설정: 알림 ---------------- */
+const pushSupported = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+function b64uToBytes(s) {
+  const b = atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4));
+  return Uint8Array.from(b, (c) => c.charCodeAt(0));
+}
+async function checkPush() {
+  try { const reg = await navigator.serviceWorker.getRegistration(); S.pushOn = !!(reg && await reg.pushManager.getSubscription()); }
+  catch (e) { S.pushOn = false; }
+  if (S.tab === "us") renderTab();
+}
+async function enablePush() {
+  try {
+    if (await Notification.requestPermission() !== "granted") return toast("알림 권한을 허용해 주세요 (폰·브라우저 설정에서 바꿀 수 있어요)");
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uToBytes(CFG.vapidPublicKey) });
+    const j = sub.toJSON();
+    await S.api.savePushSub({ endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth });
+    S.pushOn = true; renderTab();
+    reg.showNotification("둘이서", { body: "이 폰에서 알림을 받아요 💞", icon: "./icon-192.png" });
+  } catch (e) { console.warn(e); toast(errMsg(e)); }
+}
+async function disablePush(quiet) {
+  try {
+    const reg = await navigator.serviceWorker.getRegistration(), sub = reg && await reg.pushManager.getSubscription();
+    if (sub) { await S.api.deletePushSub(sub.endpoint).catch(() => {}); await sub.unsubscribe(); }
+    S.pushOn = false;
+    if (!quiet) { renderTab(); toast("이 폰 알림을 껐어요"); }
+  } catch (e) { console.warn(e); if (!quiet) toast(errMsg(e)); }
+}
+function pushCard() {
+  let body;
+  if (S.api.kind === "demo") body = h("p", { class: "sub" }, "데모에서는 알림을 켤 수 없어요");
+  else if (!CFG.vapidPublicKey) body = h("p", { class: "sub" }, "config.js에 vapidPublicKey가 없어서 알림을 쓸 수 없어요");
+  else if (!pushSupported()) body = h("p", { class: "sub" }, /iPhone|iPad/.test(navigator.userAgent)
+    ? "아이폰은 Safari에서 ‘홈 화면에 추가’한 앱으로 열어야 알림을 켤 수 있어요 (iOS 16.4 이상)" : "이 브라우저는 알림을 지원하지 않아요");
+  else {
+    if (S.pushOn === null) checkPush();
+    body = [h("p", { class: "sub" }, "상대가 답하거나 기록을 남기면, 그리고 생일·기념일·편지 열리는 날 아침에 이 폰으로 알려줘요. 폰마다 따로 켜요."),
+      h("button", { class: "btn wide" + (S.pushOn ? " line" : ""), disabled: S.pushOn === null ? true : null,
+        onclick: () => (S.pushOn ? disablePush() : enablePush()) }, S.pushOn === null ? "확인 중…" : S.pushOn ? "🔕 이 폰 알림 끄기" : "🔔 이 폰에서 알림 받기")];
+  }
+  return h("div", { class: "card", style: col(8) }, h("div", { class: "h2" }, "🔔 알림"), body);
+}
+
+/* ---------------- 비밀번호 ---------------- */
+function passwordForm(onDone) {
+  const a = h("input", { class: "input", type: "password", placeholder: "새 비밀번호 (6자 이상)", autocomplete: "new-password" });
+  const b = h("input", { class: "input", type: "password", placeholder: "한 번 더", autocomplete: "new-password" });
+  const btn = h("button", { class: "btn wide", type: "submit" }, "비밀번호 바꾸기");
+  return h("form", { class: "card", style: col(), onsubmit: async (e) => {
+    e.preventDefault();
+    if (a.value.length < 6) return toast("비밀번호는 6자 이상이어야 해요");
+    if (a.value !== b.value) return toast("두 비밀번호가 달라요");
+    btn.disabled = true;
+    try { await S.api.updatePassword(a.value); } catch (err) { btn.disabled = false; return toast(errMsg(err)); }
+    toast("비밀번호를 바꿨어요");
+    onDone();
+  } }, a, b, btn);
+}
+// 재설정 메일의 링크로 들어왔을 때
+function renderNewPassword() {
+  noTabs();
+  view(hero("둘이서", "새 비밀번호를 정해 주세요"), passwordForm(() => {
+    S.recovering = false;
+    history.replaceState(null, "", location.pathname);
+    afterLogin();
+  }));
+}
+function renderForgot() {
+  noTabs();
+  const email = h("input", { class: "input", type: "email", placeholder: "가입할 때 쓴 이메일", autocomplete: "email", inputmode: "email" });
+  const btn = h("button", { class: "btn wide", type: "submit" }, "재설정 메일 받기");
+  view(hero("둘이서", "비밀번호를 잊었어요"),
+    h("form", { class: "card", style: col(), onsubmit: async (e) => {
+      e.preventDefault();
+      const em = email.value.trim();
+      if (!em) return toast("이메일을 넣어 주세요");
+      btn.disabled = true;
+      try { await S.api.resetPassword(em); } catch (err) { btn.disabled = false; return toast(errMsg(err)); }
+      view(hero("둘이서", ""), h("div", { class: "card center", style: col(6) }, h("div", { class: "h2" }, "메일함을 확인해 주세요"),
+        h("p", { class: "sub" }, `${em}(으)로 보낸 링크를 누르면 새 비밀번호를 정할 수 있어요. 안 보이면 스팸함도 확인해 주세요.`)),
+        h("button", { class: "btn wide", onclick: () => renderAuth("in") }, "로그인으로 돌아가기"));
+    } }, email, btn),
+    h("button", { class: "btn ghost", onclick: () => renderAuth("in") }, "로그인으로 돌아가기"));
+}
+
 /* ---------------- 우리 (설정) ---------------- */
 function renderUs() {
   const p = partner(), demo = S.api.kind === "demo";
@@ -1879,7 +2486,8 @@ function renderUs() {
   } });
   const nm = h("input", { class: "input grow", maxlength: 10, value: nick(me()) });
   const parts = [
-    h("div", { class: "title" }, "우리"),
+    h("div", { class: "row" }, h("button", { class: "navbtn", "aria-label": "홈으로", onclick: () => go("home") }, "‹"),
+      h("div", { class: "title grow" }, "설정")),
     h("div", { class: "card", style: col(12) },
       h("div", { class: "names" }, nick(me()), h("span", { class: "hrt" }, "♥"), p ? nick(p.user_id) : h("span", { class: "sub" }, "기다리는 중")),
       h("div", { class: "field" }, h("label", {}, "사귄 날"), start),
@@ -1897,6 +2505,12 @@ function renderUs() {
   parts.push(h("div", { class: "card", style: col(4) },
     h("div", { class: "row" }, h("div", { class: "h2 grow" }, "우리 하트"), h("span", { class: "hearts" }, `♥ ${Math.max(0, hearts())}`)),
     h("p", { class: "sub" }, `질문에 답하면 +${H.answer}, 캘린더에 기록하면 +${H.entry}, 밸런스를 고르면 +${H.pick}. 둘이 모은 하트로 방을 꾸며요.`)));
+  parts.push(pushCard());
+  const b1 = h("button", { class: "btn wide soft", onclick: () => doBackup(true, b1) }, "📸 사진까지 전부 받기");
+  const b2 = h("button", { class: "btn wide line", onclick: () => doBackup(false, b2) }, "📝 글만 받기 (가벼워요)");
+  parts.push(h("div", { class: "card", style: col(8) }, h("div", { class: "h2" }, "💾 백업"),
+    h("p", { class: "sub" }, "우리 기록을 zip 파일 하나로 받아요. 안에 든 ‘우리의 기록.html’을 열면 기록·답·사진을 그대로 볼 수 있어요. 가끔 받아서 컴퓨터나 클라우드에 보관해 두세요."),
+    b1, b2));
   const list = h("div", { class: "list" });
   if (demo) {
     list.append(
@@ -1906,10 +2520,12 @@ function renderUs() {
   } else {
     list.append(
       h("div", { class: "it" }, h("span", { class: "grow sub" }, "로그인 계정"), h("span", { class: "tiny" }, S.user.email || "")),
+      h("button", { class: "it", onclick: () => openSheet(() => [h("div", { class: "h2" }, "비밀번호 바꾸기"), passwordForm(() => closeSheet())]) },
+        h("span", { class: "grow" }, "비밀번호 바꾸기")),
       h("button", { class: "it", onclick: logout }, h("span", { class: "grow" }, "로그아웃")));
   }
   parts.push(list);
-  parts.push(h("button", { class: "btn ghost", onclick: leave }, "커플 연결 끊기"), h("p", { class: "tiny center" }, "둘이서 · v2"));
+  parts.push(h("button", { class: "btn ghost", onclick: leave }, "커플 연결 끊기"), h("p", { class: "tiny center" }, "둘이서 · v3"));
   view(...parts);
 }
 async function demoSwitch() {
@@ -1920,6 +2536,7 @@ async function demoSwitch() {
   toast(`이제 ${josa(nick(me()), "의")} 화면이에요`);
 }
 async function logout() {
+  if (S.api.kind !== "demo" && pushSupported()) await disablePush(true);    // 로그아웃한 폰에는 알림이 안 가게
   try { await S.api.signOut(); } catch (e) { /* 무시 */ }
   location.reload();
 }
@@ -1936,6 +2553,7 @@ async function leave() {
    ===================================================================== */
 let unsub = null;
 async function afterLogin() {
+  if (S.recovering) return renderNewPassword();      // 새 비밀번호부터
   noTabs();
   view(h("div", { class: "spin" }));
   let c;
@@ -1951,15 +2569,19 @@ async function boot() {
   const hasCfg = !!(CFG.supabaseUrl && CFG.supabaseAnonKey && window.supabase);
   const demo = localStorage.getItem(MODE_KEY) === "demo";
   if (!hasCfg && !demo) return renderSetup();
+  // 비밀번호 재설정 메일의 링크로 들어왔는지는 Supabase가 주소를 지우기 전에 본다
+  S.recovering = !demo && /type=recovery/.test(location.hash);
   S.api = demo ? DemoApi() : SupaApi();
   if (S.api.onSignedOut) S.api.onSignedOut(() => location.reload());
+  if (S.api.onRecovery) S.api.onRecovery(() => { S.recovering = true; if (S.user) renderNewPassword(); });
   try { S.user = await S.api.session(); } catch (e) { console.error(e); }
   if (!S.user) return renderAuth("in");
+  if (S.recovering) return renderNewPassword();
   await afterLogin();
 }
 // 앱으로 돌아오면 놓친 변경을 한 번 더 받아 온다
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && S.couple) ["couples", "answers", "balance_picks", "room_items", "entries", "wishes", "events"].forEach(onRemote);
+  if (document.visibilityState === "visible" && S.couple) ["couples", "answers", "balance_picks", "room_items", "entries", "wishes", "events", "letters"].forEach(onRemote);
 });
 
 // 테스트에서 들여다볼 수 있게 열어 둔다
