@@ -167,7 +167,21 @@ button{background:none;border:none;cursor:pointer;touch-action:manipulation}
 .day.blank{background:transparent;box-shadow:none}
 .day .memo{position:absolute;right:5px;top:6px;width:6px;height:6px;border-radius:50%;background:var(--pink)}
 .day .lab{position:absolute;left:0;right:0;bottom:0;font-size:9.5px;font-weight:700;color:var(--pink-ink);
-  background:rgba(255,255,255,.88);text-align:center;line-height:1.6}
+  background:rgba(255,255,255,.88);text-align:center;line-height:1.6;padding:0 2px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.day .ev{position:absolute;left:0;right:0;bottom:3px;text-align:center;font-size:10px;line-height:1;letter-spacing:-1px}
+.day .ev.up{bottom:17px}
+.mday{font-family:var(--disp);font-size:16px;min-width:46px;color:var(--pink-ink);flex:none}
+.mday small{font-family:"Noto Sans KR",sans-serif;font-size:11px;color:var(--sub);margin-left:3px}
+.list .it .wt{display:block;font-weight:700}
+.list .it .tiny{display:block}
+.ev-ic{font-size:22px;flex:none}
+.upc{display:flex;flex-direction:column;padding:14px 18px 8px}
+.upc-it{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:9px 0;border-top:1px solid var(--line)}
+.upc-it:first-of-type{border-top:none}
+.upc .big{font-family:var(--disp);font-size:22px;color:var(--pink-ink);min-width:64px;text-align:center}
+.upc-t{display:block;font-weight:700}
+.upc .sub{display:block;font-size:13px}
 .entry{display:flex;flex-direction:column;gap:8px;padding:14px 0;border-bottom:1px solid var(--line)}
 .entry img{width:100%;border-radius:16px;background:#F5EDE7;min-height:120px;object-fit:cover}
 .entry .memo-t{white-space:pre-wrap;word-break:break-word}

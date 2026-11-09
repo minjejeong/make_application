@@ -65,7 +65,8 @@ const dayNum = (s) => { const [y, m, d] = s.split("-").map(Number); return Date.
 const daysBetween = (a, b) => dayNum(b) - dayNum(a);
 const addDays = (s, n) => { const [y, m, d] = s.split("-").map(Number); return ymd(new Date(y, m - 1, d + n)); };
 const WEEK = ["일", "월", "화", "수", "목", "금", "토"];
-function fmtDate(s) { const [y, m, d] = s.split("-").map(Number); return `${m}월 ${d}일 (${WEEK[new Date(y, m - 1, d).getDay()]})`; }
+const weekday = (s) => { const [y, m, d] = s.split("-").map(Number); return WEEK[new Date(y, m - 1, d).getDay()]; };
+function fmtDate(s) { const [, m, d] = s.split("-").map(Number); return `${m}월 ${d}일 (${weekday(s)})`; }
 function fmtShort(s) { const [y, m, d] = s.split("-").map(Number); return `${y}.${m}.${d}`; }
 function fmtTime(iso) { const d = new Date(iso); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; }
 
@@ -174,6 +175,9 @@ const S = {
   mapPlace: null,    // 지도 탭에서 들어가 있는 장소 id (그 안에 갈 곳을 모아 보는 화면)
   mapFocus: null,    // 지도를 다시 그릴 때 가운데로 옮길 장소 id
   drafts: {},        // 화면이 다시 그려져도 남겨 둘 입력값 (data-k별)
+  events: [],        // 캘린더 일정 · 생일 (반복 포함)
+  eventsErr: null,   // 일정을 못 불러왔을 때 보여줄 말
+  evForm: null,      // 날짜 시트에서 쓰는 중인 일정 {id?, title, day, repeat, icon}
 };
 const me = () => S.user && S.user.id;
 const partner = () => S.members.find((m) => m.user_id !== me());
@@ -224,6 +228,52 @@ function nextAnniv() {
     if (l && l !== "시작한 날") return { date: ds, label: l, in: i };
   }
   return null;
+}
+
+/* ---------- 반복 일정 ---------- */
+const REPEAT = { none: "반복 안 함", weekly: "매주", monthly: "매월", yearly: "매년" };
+const EV_ICONS = [["📌", "일정"], ["🎂", "생일"], ["💝", "기념일"], ["🎉", "이벤트"], ["✈️", "여행"], ["⭐", "기타"]];
+const daysIn = (y, m) => new Date(y, m, 0).getDate();
+// 매월 31일 · 2월 29일처럼 그 달에 없는 날은 그 달 마지막 날로
+function clampYmd(y, m, d) { return `${y}-${pad(m)}-${pad(Math.min(d, daysIn(y, m)))}`; }
+function occursOn(ev, ds) {
+  if (ds < ev.day) return false;
+  const [, sm, sd] = ev.day.split("-").map(Number), [y, m] = ds.split("-").map(Number);
+  switch (ev.repeat) {
+    case "weekly": return daysBetween(ev.day, ds) % 7 === 0;
+    case "monthly": return ds === clampYmd(y, m, sd);
+    case "yearly": return ds === clampYmd(y, sm, sd);
+    default: return ds === ev.day;
+  }
+}
+// from 날짜부터 처음 돌아오는 날 (없으면 null)
+function nextOcc(ev, from) {
+  if (ev.day >= from) return ev.day;
+  const [, sm, sd] = ev.day.split("-").map(Number), [fy, fm] = from.split("-").map(Number);
+  switch (ev.repeat) {
+    case "weekly": return addDays(ev.day, Math.ceil(daysBetween(ev.day, from) / 7) * 7);
+    case "monthly": for (let i = 0; i < 13; i++) {
+      const y = fy + Math.floor((fm - 1 + i) / 12), m = (fm - 1 + i) % 12 + 1, ds = clampYmd(y, m, sd);
+      if (ds >= from) return ds;
+    } return null;
+    case "yearly": { const a = clampYmd(fy, sm, sd); return a >= from ? a : clampYmd(fy + 1, sm, sd); }
+    default: return null;
+  }
+}
+const eventsOn = (ds) => S.events.filter((e) => occursOn(e, ds));
+// 그날 같이 한 것 (다녀온 곳 · 같이 본 영화) — 지도·영화에서 고른 날짜가 캘린더에 그대로 뜬다
+const doneOn = (ds) => S.wishes.filter((w) => w.done_on === ds);
+const doneIcon = (w) => (w.kind === "movie" ? "🎬" : "📍");
+// 다가오는 날: 100일 단위·주년 기념일 + 일정들 중 가까운 순
+function upcoming(n) {
+  const t = today(), out = [];
+  const na = nextAnniv();
+  if (na) out.push({ date: na.date, icon: "💗", title: `${na.label} 기념일` });
+  for (const e of S.events) {
+    const d = nextOcc(e, t);
+    if (d && daysBetween(t, d) <= 366) out.push({ date: d, icon: e.icon, title: e.title });
+  }
+  return out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)).slice(0, n);
 }
 
 /* =====================================================================
@@ -330,6 +380,10 @@ function SupaApi() {
       ok(await sb.from("wish_reviews").upsert({ wish_id, couple_id: cid(), user_id: uid(), stars, review },
         { onConflict: "wish_id,user_id" }));
     },
+    async loadEvents() { return ok(await sb.from("events").select("*").eq("couple_id", cid()).order("day")); },
+    async addEvent(row) { return ok(await sb.from("events").insert({ couple_id: cid(), ...row }).select().single()); },
+    async updateEvent(id, patch) { ok(await sb.from("events").update(patch).eq("id", id)); },
+    async deleteEvent(id) { ok(await sb.from("events").delete().eq("id", id)); },
     async urls(paths) {
       const r = ok(await sb.storage.from("photos").createSignedUrls(paths, 6 * 3600));
       const out = {};
@@ -340,7 +394,7 @@ function SupaApi() {
       const id = cid();
       const ch = sb.channel("duriseo-" + id);
       // 목록 테이블이 아직 없으면(setup.sql을 다시 안 돌렸으면) 구독에서 뺀다 — 없는 테이블이 끼면 채널 전체가 실패한다
-      const wishT = S.wishesErr ? [] : ["wishes", "wish_reviews"];
+      const wishT = (S.wishesErr ? [] : ["wishes", "wish_reviews"]).concat(S.eventsErr ? [] : ["events"]);
       for (const t of ["answers", "balance_picks", "room_items", "entries", "couple_members", ...wishT])
         ch.on("postgres_changes", { event: "*", schema: "public", table: t, filter: `couple_id=eq.${id}` }, () => onChange(t));
       ch.on("postgres_changes", { event: "*", schema: "public", table: "couples", filter: `id=eq.${id}` }, () => onChange("couples"));
@@ -416,6 +470,18 @@ function DemoApi() {
     rev(tower, ME, 4, "야경 최고. 바람은 너무 불었다");
     rev(tower, YOU, 5, "우리 자물쇠 아직 있을까?");
     seedKids();
+    seedEvents();
+  }
+  // 일정 예시: 둘의 생일(매년) · 토요일마다 같이 하는 것(매주)
+  function seedEvents() {
+    const now = stamp(), y96 = (ds) => "1996" + ds.slice(4);      // 1996년은 윤년이라 2월 29일도 된다
+    const ev = (title, icon, day, repeat, who) => ({ id: uuid(), couple_id: D.couple.id, title, icon, day, repeat, created_by: who, created_at: now });
+    const sat = addDays(today(), -((new Date().getDay() + 1) % 7));   // 이번 주(지난) 토요일
+    D.events = [
+      ev("바다 생일", "🎂", y96(addDays(today(), 20)), "yearly", ME),
+      ev("하늘 생일", "🎂", y96(addDays(today(), -100)), "yearly", YOU),
+      ev("같이 러닝하는 날", "⭐", addDays(sat, -21), "weekly", YOU),
+    ];
   }
   // 장소 안에 갈 곳 예시 (이 기능이 생기기 전에 만든 데모에도 한 번 넣는다)
   function seedKids() {
@@ -448,6 +514,7 @@ function DemoApi() {
       if (!D) await seed();
       if (!D.wishes) { seedWishes(); save(); }
       if (!D.kids) { seedKids(); save(); }
+      if (!D.events) { seedEvents(); save(); }
       return { id: D.as, email: D.as === ME ? "하늘@데모" : "바다@데모" };
     },
     async signOut() {},
@@ -501,6 +568,13 @@ function DemoApi() {
       const gone = new Set([id, ...D.wishes.filter((x) => x.parent_id === id).map((x) => x.id)]);
       D.wishes = D.wishes.filter((x) => !gone.has(x.id)); D.reviews = D.reviews.filter((r) => !gone.has(r.wish_id)); save();
     },
+    async loadEvents() { return copy(D.events || []); },
+    async addEvent(row) {
+      const e = { id: uuid(), couple_id: D.couple.id, created_by: uid(), repeat: "none", icon: "📌", created_at: stamp(), ...row };
+      D.events.push(e); save(); return copy(e);
+    },
+    async updateEvent(id, patch) { const e = D.events.find((x) => x.id === id); if (e) Object.assign(e, patch); save(); },
+    async deleteEvent(id) { D.events = D.events.filter((x) => x.id !== id); save(); },
     async saveReview(wish_id, stars, review) {
       const r = D.reviews.find((x) => x.wish_id === wish_id && x.user_id === uid());
       if (r) Object.assign(r, { stars, review }); else D.reviews.push({ wish_id, couple_id: D.couple.id, user_id: uid(), stars, review, created_at: stamp() });
@@ -548,9 +622,20 @@ async function loadWishData() {
       ? "이 기능을 쓰려면 Supabase SQL Editor에서 setup.sql을 한 번 더 실행해 주세요" : errMsg(e);
   }
 }
+// 일정. 실패해도(테이블이 아직 없어도) 캘린더의 나머지는 그대로 쓴다
+async function loadEventData() {
+  try { S.events = await S.api.loadEvents(); S.eventsErr = null; }
+  catch (e) {
+    console.warn(e);
+    S.events = [];
+    S.eventsErr = /schema cache|does not exist|Could not find the/i.test(String((e && e.message) || e))
+      ? "일정·생일을 넣으려면 Supabase SQL Editor에서 setup.sql을 한 번 더 실행해 주세요" : errMsg(e);
+  }
+}
 let urlsAt = 0;       // 사진 주소를 받은 시각. Supabase 주소는 6시간이면 만료된다
 async function loadAll() {
-  const [ans, picks, room, cnt] = await Promise.all([S.api.loadAnswers(), S.api.loadPicks(), S.api.loadRoom(), S.api.countEntries(), loadWishData()]);
+  const [ans, picks, room, cnt] = await Promise.all([S.api.loadAnswers(), S.api.loadPicks(), S.api.loadRoom(), S.api.countEntries(),
+    loadWishData(), loadEventData()]);
   setAnswers(ans); setPicks(picks); S.room = room; S.entryCount = cnt;
   S.entries = {}; S.urls = {}; urlsAt = Date.now();
   await loadMonth(S.calMonth, true);
@@ -573,6 +658,7 @@ async function flushRemote() {
     if (ts.includes("balance_picks")) setPicks(await S.api.loadPicks());
     if (ts.includes("room_items") && !S.dragging) S.room = await S.api.loadRoom();
     if (ts.includes("wishes") || ts.includes("wish_reviews")) await loadWishData();
+    if (ts.includes("events")) await loadEventData();
     if (ts.includes("entries")) {
       if (Date.now() - urlsAt > 5 * 3600e3) { S.urls = {}; urlsAt = Date.now(); }   // 만료되기 전에 새로 받는다
       S.entryCount = await S.api.countEntries();
@@ -847,9 +933,15 @@ function renderHome() {
   parts.push(h("div", { class: "room-bar" }, h("span", { class: "hearts" }, `♥ ${Math.max(0, hearts())}`),
     h("button", { class: "btn sm soft", onclick: openRoomEditor }, "🛋️ 방 꾸미기")));
   parts.push(qCard(todayQ(), "오늘의 질문"));
-  const na = nextAnniv();
-  if (na) parts.push(h("div", { class: "card anniv" }, h("div", { class: "big" }, na.in === 0 ? "오늘!" : `D-${na.in}`),
-    h("div", {}, h("div", { class: "h2" }, `${na.label} 기념일`), h("div", { class: "sub" }, fmtDate(na.date)))));
+  // 다가오는 날: 기념일 + 생일·일정 중 가까운 3개. 누르면 그날 캘린더가 열린다
+  const up = upcoming(3);
+  if (up.length) parts.push(h("div", { class: "card upc" }, h("div", { class: "sec", style: { margin: "0 0 4px" } }, "다가오는 날"),
+    up.map((u) => {
+      const n = daysBetween(today(), u.date);
+      return h("button", { class: "upc-it", onclick: () => openDay(u.date) },
+        h("span", { class: "big" }, n === 0 ? "오늘!" : `D-${n}`),
+        h("span", { class: "grow" }, h("span", { class: "upc-t" }, `${u.icon} ${u.title}`), h("span", { class: "sub" }, fmtDate(u.date))));
+    })));
   view(...parts);
 }
 
@@ -999,16 +1091,27 @@ async function renderCal() {
   const first = new Date(y, m - 1, 1).getDay(), days = new Date(y, m, 0).getDate();
   const rows = S.entries[ym] || [], byDay = {};
   for (const e of rows) (byDay[e.day] || (byDay[e.day] = [])).push(e);
-  const t = today(), cells = [];
+  const t = today(), cells = [], monthItems = [];
   for (let i = 0; i < first; i++) cells.push(h("div", { class: "day blank" }));
   for (let d = 1; d <= days; d++) {
     const ds = `${ym}-${pad(d)}`, list = byDay[ds] || [];
     const ph = list.find((e) => e.thumb_path && S.urls[e.thumb_path]);
-    const lab = annivLabel(ds);
+    const evs = eventsOn(ds), dn = doneOn(ds), an = annivLabel(ds);
+    const lab = an || (evs[0] && evs[0].title);       // 칸 아래 글: 기념일 > 일정 이름
+    const icons = [...new Set([...evs.map((e) => e.icon), ...dn.map(doneIcon)])].slice(0, 3).join("");
     const cell = h("button", { class: "day" + (ph ? " photo" : "") + (ds === t ? " today" : ""), "aria-label": fmtDate(ds), onclick: () => openDay(ds) },
-      h("span", { class: "n" }, d), list.length && !ph ? h("i", { class: "memo" }) : null, lab ? h("span", { class: "lab" }, lab) : null);
+      h("span", { class: "n" }, d), list.length && !ph ? h("i", { class: "memo" }) : null,
+      icons ? h("span", { class: "ev" + (lab ? " up" : "") }, icons) : null,
+      lab ? h("span", { class: "lab" }, lab) : null);
     if (ph) cell.style.backgroundImage = `url("${S.urls[ph.thumb_path]}")`;
     cells.push(cell);
+    if (an && an !== "시작한 날") monthItems.push({ ds, icon: "💗", title: `${an} 기념일` });
+    for (const e of evs) {
+      if (e.repeat === "weekly" && monthItems.some((x) => x.ev === e.id)) continue;     // 매주는 이달 첫 번째에 한 줄만
+      monthItems.push({ ds, ev: e.id, icon: e.icon, title: e.title,
+        sub: e.repeat === "weekly" ? `매주 ${weekday(e.day)}요일` : e.repeat !== "none" ? REPEAT[e.repeat] : "" });
+    }
+    for (const w of dn) monthItems.push({ ds, icon: doneIcon(w), title: w.title, sub: w.kind === "movie" ? "같이 봤어요" : "다녀왔어요" });
   }
   const photos = rows.filter((e) => e.photo_path).length;
   view(
@@ -1019,7 +1122,14 @@ async function renderCal() {
     h("div", { class: "week" }, WEEK.map((w) => h("div", {}, w))),
     h("div", { class: "cal" }, cells),
     h("p", { class: "sub center" }, rows.length ? `이번 달 기록 ${rows.length}개 · 사진 ${photos}장` : "날짜를 눌러 그날을 남겨 보세요"),
-    h("button", { class: "btn wide soft", onclick: () => openDay(t) }, "✏️ 오늘 기록하기"),
+    h("div", { class: "row" },
+      h("button", { class: "btn soft grow", onclick: () => openDay(t) }, "✏️ 오늘 기록하기"),
+      h("button", { class: "btn line grow", onclick: () => openDay(t, true) }, "📅 일정·생일 추가")),
+    monthItems.length ? [h("div", { class: "sec" }, `${m}월에 있는 날`), h("div", { class: "list" }, monthItems.map((x) =>
+      h("button", { class: "it", onclick: () => openDay(x.ds) },
+        h("span", { class: "mday" }, `${Number(x.ds.slice(8))}일`, h("small", {}, weekday(x.ds))),
+        h("span", { class: "grow" }, `${x.icon} ${x.title}`),
+        x.sub ? h("span", { class: "tiny" }, x.sub) : null)))] : null,
   );
 }
 function moveMonth(n) {
@@ -1034,21 +1144,84 @@ async function ensureUrls(paths) {
   if (!need.length) return;
   try { Object.assign(S.urls, await S.api.urls(need)); sheetRefresh(); } catch (e) { console.warn(e); }
 }
-async function openDay(ds) {
+// withEvent면 일정 넣는 칸을 펼친 채로 연다
+async function openDay(ds, withEvent) {
   S.dayForm = { photo: null, preview: null, memo: "" };
-  openSheet(() => drawDay(ds), { onClose: () => { if (S.dayForm && S.dayForm.preview) URL.revokeObjectURL(S.dayForm.preview); S.dayForm = null; } });
+  S.evForm = withEvent && !S.eventsErr ? newEv(ds) : null;
+  openSheet(() => drawDay(ds), { onClose: () => {
+    if (S.dayForm && S.dayForm.preview) URL.revokeObjectURL(S.dayForm.preview);
+    S.dayForm = null; S.evForm = null;
+  } });
   if (!S.entries[ds.slice(0, 7)]) { try { await loadMonth(ds.slice(0, 7)); sheetRefresh(); } catch (e) { console.warn(e); } }
   ensureUrls(dayEntries(ds).map((e) => e.photo_path));
 }
 function drawDay(ds) {
-  const list = dayEntries(ds), lab = annivLabel(ds);
+  const list = dayEntries(ds), lab = annivLabel(ds), evs = eventsOn(ds), dn = doneOn(ds);
   const n = S.couple.start_date ? daysBetween(S.couple.start_date, ds) + 1 : 0;
-  return [
-    h("div", {}, h("div", { class: "h2" }, fmtDate(ds)),
-      h("div", { class: "row", style: { marginTop: "4px" } }, lab ? h("span", { class: "chip" }, `${lab} ♥`) : null, n > 0 ? h("span", { class: "tiny" }, `우리 ${n}일째`) : null)),
+  const out = [h("div", {}, h("div", { class: "h2" }, fmtDate(ds)),
+    h("div", { class: "row", style: { marginTop: "4px" } }, lab ? h("span", { class: "chip" }, `${lab} ♥`) : null, n > 0 ? h("span", { class: "tiny" }, `우리 ${n}일째`) : null))];
+  if (evs.length) out.push(h("div", { class: "list" }, evs.map((e) => evRow(e, ds))));
+  // 지도에서 '다녀왔어요', 영화에서 '같이 봤어요'를 고른 날이면 여기 뜬다
+  if (dn.length) out.push(h("div", { class: "sec" }, "이날 같이 한 것"), h("div", { class: "qlist" }, dn.map((w) => {
+    const parent = w.parent_id && wishById(w.parent_id);
+    return h("button", { class: "qitem", onclick: () => openWish(w.id) }, h("span", { class: "st" }, doneIcon(w)),
+      h("span", { class: "t" }, h("span", { class: "wt" }, w.title),
+        h("span", { class: "tiny wsub" }, w.kind === "movie" ? "같이 본 영화" : parent ? `${parent.title}에서` : "다녀온 곳")));
+  })));
+  out.push(S.evForm ? eventForm()
+    : S.eventsErr ? h("div", { class: "banner" }, S.eventsErr)
+    : h("button", { class: "btn sm line", style: { alignSelf: "flex-start" }, onclick: () => { S.evForm = newEv(ds); drawSheet(); } }, "📅 이날에 일정·생일 추가"));
+  out.push(h("div", { class: "sec" }, "기록"),
     list.length ? h("div", {}, list.map(entryEl)) : h("p", { class: "empty" }, "아직 이날의 기록이 없어요"),
-    entryForm(ds),
-  ];
+    entryForm(ds));
+  return out;
+}
+
+/* ---------------- 일정 · 생일 (반복) ---------------- */
+const newEv = (ds) => ({ title: "", day: ds, repeat: "none", icon: "📌", touched: false });
+function evRow(e, ds) {
+  const age = e.icon === "🎂" && e.repeat === "yearly" ? Number(ds.slice(0, 4)) - Number(e.day.slice(0, 4)) : 0;
+  const sub = [age > 0 ? `${age}번째 생일` : "", e.repeat !== "none" ? `${REPEAT[e.repeat]} 반복` : ""].filter(Boolean).join(" · ");
+  return h("div", { class: "it" }, h("span", { class: "ev-ic" }, e.icon),
+    h("span", { class: "grow" }, h("span", { class: "wt" }, e.title), sub ? h("span", { class: "tiny" }, sub) : null),
+    h("button", { class: "link", onclick: () => { S.evForm = { ...e, touched: true }; drawSheet(); } }, "고치기"));
+}
+function eventForm() {
+  const F = S.evForm;
+  const t = h("input", { class: "input", maxlength: 100, placeholder: "예: 바다 생일, 영화 예매", oninput: () => { F.title = t.value; } });
+  t.value = F.title;
+  const d = h("input", { class: "input", type: "date", value: F.day, onchange: () => { F.day = d.value; } });
+  // 🎂·💝를 고르면 반복을 직접 안 건드린 경우 '매년'으로 맞춰 준다
+  const icons = h("div", { class: "pcats" }, EV_ICONS.map(([ic, name]) => h("button", { type: "button", class: F.icon === ic ? "on" : "",
+    onclick: () => { F.icon = ic; if (!F.touched && (ic === "🎂" || ic === "💝")) F.repeat = "yearly"; drawSheet(); } }, `${ic} ${name}`)));
+  const rep = h("div", { class: "seg" }, Object.entries(REPEAT).map(([k, l]) => segBtn(l, F.repeat === k, () => { F.repeat = k; F.touched = true; drawSheet(); })));
+  const save = h("button", { class: "btn grow", onclick: async () => {
+    const title = F.title.trim();
+    if (!title) return toast("이름을 적어 주세요");
+    if (!F.day) return toast("날짜를 골라 주세요");
+    const row = { title, day: F.day, repeat: F.repeat, icon: F.icon };
+    save.disabled = true;
+    try {
+      if (F.id) { await S.api.updateEvent(F.id, row); Object.assign(S.events.find((e) => e.id === F.id) || {}, row); }
+      else S.events.push(await S.api.addEvent(row));
+    } catch (err) { save.disabled = false; return toast(errMsg(err)); }
+    S.evForm = null; drawSheet(); renderTab();
+    toast(F.id ? "일정을 고쳤어요" : F.repeat === "none" ? `${F.icon} 일정을 넣었어요` : `${F.icon} ${REPEAT[F.repeat]} 반복으로 넣었어요`);
+  } }, F.id ? "저장" : "넣기");
+  return h("div", { class: "card", style: col() },
+    h("div", { class: "sec", style: { margin: 0 } }, F.id ? "일정 고치기" : "일정·생일 추가"),
+    icons, t,
+    h("div", { class: "field" }, h("label", {}, F.repeat === "none" ? "날짜" : F.icon === "🎂" ? "태어난 날 (그날부터 매년 표시돼요)" : "처음 날짜"), d),
+    h("div", { class: "field" }, h("label", {}, "반복"), rep),
+    h("div", { class: "row" },
+      F.id ? h("button", { class: "btn ghost", onclick: () => delEvent(F) }, "지우기") : null,
+      h("button", { class: "btn line grow", onclick: () => { S.evForm = null; drawSheet(); } }, "취소"), save));
+}
+async function delEvent(F) {
+  if (!confirm(`‘${F.title}’ 일정을 지울까요?${F.repeat !== "none" ? "\n반복되는 날짜도 모두 지워져요." : ""}`)) return;
+  try { await S.api.deleteEvent(F.id); } catch (err) { return toast(errMsg(err)); }
+  S.events = S.events.filter((e) => e.id !== F.id);
+  S.evForm = null; drawSheet(); renderTab(); toast("지웠어요");
 }
 function entryEl(e) {
   const mine = e.user_id === me();
@@ -1786,10 +1959,10 @@ async function boot() {
 }
 // 앱으로 돌아오면 놓친 변경을 한 번 더 받아 온다
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && S.couple) ["couples", "answers", "balance_picks", "room_items", "entries", "wishes"].forEach(onRemote);
+  if (document.visibilityState === "visible" && S.couple) ["couples", "answers", "balance_picks", "room_items", "entries", "wishes", "events"].forEach(onRemote);
 });
 
 // 테스트에서 들여다볼 수 있게 열어 둔다
-window.__duriseo = { S, Q, BAL, todayQ, hearts, questionOrder, annivLabel };
+window.__duriseo = { S, Q, BAL, todayQ, hearts, questionOrder, annivLabel, occursOn, nextOcc, upcoming };
 boot();
 })();

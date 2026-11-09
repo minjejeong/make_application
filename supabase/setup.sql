@@ -110,6 +110,19 @@ create table if not exists public.wish_reviews (
 );
 create index if not exists wish_reviews_couple on public.wish_reviews(couple_id);
 
+-- 캘린더 일정 · 생일 · 기념일. repeat: none(한 번) · weekly(매주) · monthly(매월) · yearly(매년), day = 처음 날짜
+create table if not exists public.events (
+  id         uuid primary key default gen_random_uuid(),
+  couple_id  uuid not null references public.couples(id) on delete cascade,
+  title      text not null check (char_length(title) between 1 and 100),
+  day        date not null,
+  repeat     text not null default 'none' check (repeat in ('none','weekly','monthly','yearly')),
+  icon       text not null default '📌' check (char_length(icon) <= 8),
+  created_by uuid default auth.uid() references auth.users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+create index if not exists events_couple on public.events(couple_id);
+
 -- ---------- 멤버 확인 함수 ----------
 -- security definer: 정책 안에서 couple_members를 다시 읽을 때 생기는 RLS 무한 재귀를 막는다.
 create or replace function public.is_member(cid uuid)
@@ -131,6 +144,7 @@ alter table public.balance_picks  enable row level security;
 alter table public.room_items     enable row level security;
 alter table public.wishes         enable row level security;
 alter table public.wish_reviews   enable row level security;
+alter table public.events         enable row level security;
 
 drop policy if exists couples_select on public.couples;
 create policy couples_select on public.couples for select to authenticated using (public.is_member(id));
@@ -214,6 +228,18 @@ create policy wish_reviews_update on public.wish_reviews for update to authentic
 drop policy if exists wish_reviews_delete on public.wish_reviews;
 create policy wish_reviews_delete on public.wish_reviews for delete to authenticated using (user_id = auth.uid());
 
+-- 일정도 둘이 같이 쓴다 (누가 넣었든 둘 다 고치고 지울 수 있다)
+drop policy if exists events_select on public.events;
+create policy events_select on public.events for select to authenticated using (public.is_member(couple_id));
+drop policy if exists events_insert on public.events;
+create policy events_insert on public.events for insert to authenticated
+  with check (public.is_member(couple_id) and created_by = auth.uid());
+drop policy if exists events_update on public.events;
+create policy events_update on public.events for update to authenticated
+  using (public.is_member(couple_id)) with check (public.is_member(couple_id));
+drop policy if exists events_delete on public.events;
+create policy events_delete on public.events for delete to authenticated using (public.is_member(couple_id));
+
 -- 앱에서 고칠 수 있는 칸만 열어 둔다. 초대 코드·구성원 기록·소속 커플은 아래 함수로만 바뀐다.
 revoke update on public.couples from anon, authenticated;
 grant  update (start_date, wall, floor) on public.couples to authenticated;
@@ -221,6 +247,8 @@ revoke update on public.couple_members from anon, authenticated;
 grant  update (nickname) on public.couple_members to authenticated;
 revoke update on public.wishes from anon, authenticated;
 grant  update (title, memo, done_on, place_cat) on public.wishes to authenticated;
+revoke update on public.events from anon, authenticated;
+grant  update (title, day, repeat, icon) on public.events to authenticated;
 
 -- ---------- 커플 만들기 / 초대 코드로 들어가기 / 연결 끊기 ----------
 create or replace function public.create_couple(p_nickname text, p_start date)
@@ -310,7 +338,7 @@ create policy "duriseo photos delete" on storage.objects for delete to authentic
 do $$
 declare t text;
 begin
-  foreach t in array array['couples','couple_members','entries','answers','balance_picks','room_items','wishes','wish_reviews'] loop
+  foreach t in array array['couples','couple_members','entries','answers','balance_picks','room_items','wishes','wish_reviews','events'] loop
     begin
       execute format('alter publication supabase_realtime add table public.%I', t);
     exception when duplicate_object then null;   -- 이미 등록됨

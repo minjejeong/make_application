@@ -1,7 +1,7 @@
 /* 둘이서 — 오프라인 지원
    앱 파일을 캐시에 담아 인터넷이 약해도 화면은 뜨게 한다. (데이터는 Supabase에서 온다)
    앱 파일을 고친 뒤에는 아래 CACHE 버전을 올려야 설치된 폰에도 반영된다. */
-const CACHE = "duriseo-v7";
+const CACHE = "duriseo-v8";
 
 const ASSETS = [
   "./",
