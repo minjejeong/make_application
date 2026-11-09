@@ -242,6 +242,13 @@ button{background:none;border:none;cursor:pointer;touch-action:manipulation}
 </div>
 <div id="toast" class="hide" role="status"></div>
 
+<script>
+/* 주소 끝에 ?demo를 붙이면 데모로 연다 (서버 연결 뒤에도 혼자 둘러볼 수 있게). 끝내기는 '우리' 탭의 '데모 끝내기' */
+if (/[?&]demo\b/.test(location.search)) {
+  try { localStorage.setItem("duriseo_mode", "demo"); } catch (e) {}
+  history.replaceState(null, "", location.pathname);
+}
+</script>
 <script src="./config.js"></script>
 <script src="./vendor/supabase.min.js"></script>
 <script src="./data.js"></script>
