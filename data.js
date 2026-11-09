@@ -1,5 +1,5 @@
 /* =====================================================================
-   둘이서 — 콘텐츠 데이터 (질문 · 밸런스 · 방 꾸미기)
+   둘이서 — 콘텐츠 데이터 (질문 · 밸런스 · 나무 · 하트)
 
    ⚠️ 질문과 밸런스는 "목록 안의 순서"가 곧 id다 (light-1, light-2 …, b-1, b-2 …).
    이미 저장된 답이 이 id를 가리키므로,
@@ -572,83 +572,22 @@ window.DURISEO_DATA = {
     ["매일 짧게 일기 쓰기", "일주일에 한 번 길게 대화하기", "us"],
   ],
 
-  /* ---------------- 우리 방 꾸미기 ----------------
-     price: 하트 가격.  s: 기본 크기 배율 */
-  objCats: { furniture: "가구", light: "조명", plant: "식물", deco: "소품", pet: "동물", sky: "하늘", season: "계절" },
-  objects: [
-    { key: "sofa",    e: "🛋️", name: "소파",       price: 20, cat: "furniture", s: 1.6 },
-    { key: "bed",     e: "🛏️", name: "침대",       price: 30, cat: "furniture", s: 1.7 },
-    { key: "chair",   e: "🪑", name: "의자",       price: 8,  cat: "furniture", s: 1.1 },
-    { key: "door",    e: "🚪", name: "문",         price: 10, cat: "furniture", s: 1.6 },
-    { key: "window",  e: "🪟", name: "창문",       price: 12, cat: "furniture", s: 1.4 },
-    { key: "mirror",  e: "🪞", name: "거울",       price: 12, cat: "furniture", s: 1.2 },
-    { key: "bath",    e: "🛁", name: "욕조",       price: 25, cat: "furniture", s: 1.5 },
-    { key: "basket",  e: "🧺", name: "바구니",     price: 6,  cat: "furniture", s: 0.9 },
-    { key: "bulb",    e: "💡", name: "전구",       price: 5,  cat: "light",     s: 0.8 },
-    { key: "candle",  e: "🕯️", name: "캔들",       price: 6,  cat: "light",     s: 0.8 },
-    { key: "lantern", e: "🏮", name: "등불",       price: 10, cat: "light",     s: 1.0 },
-    { key: "lamp",    e: "🪔", name: "램프",       price: 8,  cat: "light",     s: 0.9 },
-    { key: "mball",   e: "🪩", name: "미러볼",     price: 25, cat: "light",     s: 1.0 },
-    { key: "pot",     e: "🪴", name: "화분",       price: 8,  cat: "plant",     s: 1.1 },
-    { key: "cactus",  e: "🌵", name: "선인장",     price: 6,  cat: "plant",     s: 1.0 },
-    { key: "sunfl",   e: "🌻", name: "해바라기",   price: 8,  cat: "plant",     s: 1.0 },
-    { key: "tulip",   e: "🌷", name: "튤립",       price: 6,  cat: "plant",     s: 0.9 },
-    { key: "bouquet", e: "💐", name: "꽃다발",     price: 10, cat: "plant",     s: 1.0 },
-    { key: "tree",    e: "🌳", name: "나무",       price: 20, cat: "plant",     s: 1.8 },
-    { key: "clover",  e: "🍀", name: "네잎클로버", price: 15, cat: "plant",     s: 0.8 },
-    { key: "books",   e: "📚", name: "책",         price: 5,  cat: "deco",      s: 0.9 },
-    { key: "game",    e: "🎮", name: "게임기",     price: 15, cat: "deco",      s: 0.9 },
-    { key: "tv",      e: "📺", name: "TV",         price: 20, cat: "deco",      s: 1.3 },
-    { key: "coffee",  e: "☕", name: "커피",       price: 4,  cat: "deco",      s: 0.7 },
-    { key: "teddy",   e: "🧸", name: "곰인형",     price: 12, cat: "deco",      s: 1.0 },
-    { key: "gift",    e: "🎁", name: "선물",       price: 8,  cat: "deco",      s: 0.9 },
-    { key: "frame",   e: "🖼️", name: "액자",       price: 10, cat: "deco",      s: 1.1 },
-    { key: "clock",   e: "⏰", name: "시계",       price: 8,  cat: "deco",      s: 0.8 },
-    { key: "cake",    e: "🎂", name: "케이크",     price: 10, cat: "deco",      s: 0.9 },
-    { key: "ribbon",  e: "🎀", name: "리본",       price: 4,  cat: "deco",      s: 0.7 },
-    { key: "phones",  e: "🎧", name: "헤드폰",     price: 10, cat: "deco",      s: 0.8 },
-    { key: "camera",  e: "📷", name: "카메라",     price: 12, cat: "deco",      s: 0.8 },
-    { key: "guitar",  e: "🎸", name: "기타",       price: 18, cat: "deco",      s: 1.3 },
-    { key: "wine",    e: "🍷", name: "와인",       price: 8,  cat: "deco",      s: 0.8 },
-    { key: "balloon", e: "🎈", name: "풍선",       price: 5,  cat: "deco",      s: 1.0 },
-    { key: "letter",  e: "💌", name: "편지",       price: 6,  cat: "deco",      s: 0.7 },
-    { key: "cat",     e: "🐱", name: "고양이",     price: 25, cat: "pet",       s: 1.0 },
-    { key: "dog",     e: "🐶", name: "강아지",     price: 25, cat: "pet",       s: 1.0 },
-    { key: "rabbit",  e: "🐰", name: "토끼",       price: 20, cat: "pet",       s: 0.9 },
-    { key: "hamster", e: "🐹", name: "햄스터",     price: 15, cat: "pet",       s: 0.7 },
-    { key: "fish",    e: "🐠", name: "물고기",     price: 10, cat: "pet",       s: 0.8 },
-    { key: "turtle",  e: "🐢", name: "거북이",     price: 15, cat: "pet",       s: 0.8 },
-    { key: "parrot",  e: "🦜", name: "앵무새",     price: 20, cat: "pet",       s: 0.9 },
-    { key: "moon",    e: "🌙", name: "달",         price: 10, cat: "sky",       s: 0.9 },
-    { key: "star",    e: "⭐", name: "별",         price: 5,  cat: "sky",       s: 0.6 },
-    { key: "cloud",   e: "☁️", name: "구름",       price: 5,  cat: "sky",       s: 1.0 },
-    { key: "rainbow", e: "🌈", name: "무지개",     price: 15, cat: "sky",       s: 1.3 },
-    { key: "sun",     e: "☀️", name: "해",         price: 10, cat: "sky",       s: 1.0 },
-    { key: "xmas",    e: "🎄", name: "트리",       price: 25, cat: "season",    s: 1.6 },
-    { key: "pumpkin", e: "🎃", name: "호박",       price: 10, cat: "season",    s: 0.9 },
-    { key: "snowman", e: "⛄", name: "눈사람",     price: 15, cat: "season",    s: 1.2 },
-    { key: "blossom", e: "🌸", name: "벚꽃",       price: 10, cat: "season",    s: 0.8 },
+  /* ---------------- 함께 키우는 나무 ----------------
+     at: 이 단계가 되는 누적 하트 (둘이 지금까지 모은 하트 — 배경에 쓴 하트도 포함, 줄지 않는다)
+     꽃 피는 나무 다음부터는 forestEvery마다 주변에 나무가 한 그루씩 (최대 forestMax)
+     배경 이름 · 가격은 tree.js의 CATALOG */
+  treeStages: [
+    { at: 0,   ic: "🌰", name: "씨앗" },
+    { at: 30,  ic: "🌱", name: "새싹" },
+    { at: 80,  ic: "🪴", name: "어린 나무" },
+    { at: 160, ic: "🌳", name: "나무" },
+    { at: 300, ic: "🌳", name: "큰 나무" },
+    { at: 500, ic: "🌸", name: "꽃 피는 나무" },
   ],
+  forestEvery: 200,
+  forestMax: 12,
 
-  /* 벽지·바닥 — 첫 번째는 기본(무료) */
-  walls: [
-    { key: "cream",    name: "크림",     price: 0,  css: "linear-gradient(#FFF7EE,#FDEBDD)" },
-    { key: "peach",    name: "피치",     price: 15, css: "linear-gradient(#FFE6DC,#FFD2C2)" },
-    { key: "sky",      name: "하늘",     price: 15, css: "linear-gradient(#E6F2FF,#CFE4FF)" },
-    { key: "mint",     name: "민트",     price: 15, css: "linear-gradient(#E6F8F0,#CDEEE0)" },
-    { key: "lavender", name: "라벤더",   price: 20, css: "linear-gradient(#F1EAFF,#DFD2FF)" },
-    { key: "stripe",   name: "줄무늬",   price: 20, css: "repeating-linear-gradient(90deg,#FFF3F5 0 18px,#FFE4EB 18px 36px)" },
-    { key: "night",    name: "밤하늘",   price: 25, css: "radial-gradient(circle at 20% 30%,#fff 1px,transparent 2px) 0 0/48px 48px,radial-gradient(circle at 70% 60%,#fff9c4 1.2px,transparent 2.4px) 0 0/64px 64px,linear-gradient(#2B2E63,#1D1F48)" },
-  ],
-  floors: [
-    { key: "wood",  name: "원목",     price: 0,  css: "repeating-linear-gradient(90deg,#E2B78C 0 34px,#D8AB7F 34px 68px)" },
-    { key: "rug",   name: "핑크 러그", price: 12, css: "radial-gradient(ellipse at 50% 55%,#FFC7D4 0 45%,transparent 46%),repeating-linear-gradient(90deg,#E2B78C 0 34px,#D8AB7F 34px 68px)" },
-    { key: "tile",  name: "타일",     price: 12, css: "repeating-conic-gradient(#EFEFEF 0 25%,#FBFBFB 0 50%) 0 0/36px 36px" },
-    { key: "check", name: "체크",     price: 15, css: "repeating-conic-gradient(#F8D9A6 0 25%,#FFF1D9 0 50%) 0 0/40px 40px" },
-    { key: "grass", name: "잔디",     price: 15, css: "linear-gradient(#B5E39A,#93CF77)" },
-    { key: "cloud", name: "구름",     price: 20, css: "radial-gradient(circle at 25% 40%,#fff 0 18%,transparent 19%),radial-gradient(circle at 70% 70%,#fff 0 14%,transparent 15%),linear-gradient(#E3F1FF,#CFE5FF)" },
-  ],
-
-  /* 하트: 시작 선물 + 활동마다 쌓인다 (둘이 같이 쓰는 지갑) */
-  hearts: { start: 30, answer: 3, entry: 2, pick: 1 },
+  /* 하트: 시작 선물 + 활동마다 쌓인다 (둘이 같이 쓰는 지갑)
+     water: 나무에 물 주기 (하루 한 번, 각자) · waterBoth: 그날 둘 다 주면 더 · done: 다녀왔어요 · 같이 봤어요 · 이뤘어요 */
+  hearts: { start: 30, answer: 3, entry: 2, pick: 1, water: 2, waterBoth: 2, done: 5 },
 };

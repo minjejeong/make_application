@@ -111,9 +111,15 @@ DATA.categories.forEach((c) => c.qs.forEach((text, i) => {
 const CAT = Object.fromEntries(DATA.categories.map((c) => [c.id, c]));
 const BAL = DATA.balance.map(([a, b, cat], i) => ({ id: `b-${i + 1}`, a, b, cat }));
 const BMAP = Object.fromEntries(BAL.map((x) => [x.id, x]));
-const OBJ = Object.fromEntries(DATA.objects.map((o) => [o.key, o]));
-const WALL = Object.fromEntries(DATA.walls.map((w) => [w.key, w]));
-const FLOOR = Object.fromEntries(DATA.floors.map((f) => [f.key, f]));
+// 함께 키우는 나무 그림 (tree.js). 배경 목록 [id, 이름, 하트, 무리, 계절]
+const TREE = window.DuriseoTree;
+const BG = Object.fromEntries((TREE ? TREE.CATALOG : []).map(([id, name, price, group, season]) => [id, { id, name, price, group, season }]));
+// 날짜 따라 저절로 나오는 배경 — 상점에서 언제 나오는지 알려 준다
+const BG_AUTO = { hanriver: "3~5월", valley: "6월", beach: "7~8월", seattle: "11월", cabin: "12월 26일~2월", lake: "9월~10월 14일",
+                  halloween: "10월 15~31일", london: "12월 1~25일", market: "금·토 저녁 6시부터", park: "100일 · 주년",
+                  seollal: "설 연휴", chuseok: "추석 연휴", hangul: "10월 9일", newyear: "12/31 · 1/1", sweet: "2/14 · 3/14" };
+// 상점 미리보기 시각: 밤이 예쁜 배경은 밤으로
+const BG_HOUR = { market: 20, aurora: 22, space: 21, park: 20.5, halloween: 20, london: 20, chuseok: 20, busan: 21, newyear: 7 };
 
 // 지도에 저장하는 장소 분류. KCAT은 카카오 장소 분류 코드 → 우리 분류 (저장할 때 처음 골라 두는 값)
 const PCAT = { food: { ic: "🍽️", name: "맛집" }, cafe: { ic: "☕", name: "카페" }, dessert: { ic: "🍰", name: "디저트" },
@@ -156,7 +162,7 @@ const S = {
   members: [],       // [{user_id, nickname}]
   answers: {},       // question_id -> {user_id: {answer, created_at}}
   picks: {},         // item_id -> {user_id: {pick, created_at}}
-  room: [],          // room_items 행
+  room: [],          // room_items 행 — 나무 물 주기(water:날짜, bought_by=준 사람) · 산 배경(bg:id, placed=지금 고정한 배경)
   entryCount: 0,
   entries: {},       // "YYYY-MM" -> entries 행들
   urls: {},          // 사진 경로 -> 보여줄 주소
@@ -165,10 +171,7 @@ const S = {
   qCat: null,        // 질문 탭에서 연 카테고리
   qEdit: false,
   balShow: null,     // 방금 고른 밸런스 문항 (결과 화면 유지용)
-  editing: false,    // 방 꾸미기 중
-  sel: null,         // 고른 오브제 id
-  dragging: false,
-  shopTab: "shop",
+  bgPick: null,      // 배경 상점에서 크게 보고 있는 배경 id
   dayForm: null,
   wishes: [],        // wishes 행 (영화 · 장소)
   reviews: {},       // wish_id -> {user_id: {stars, review, created_at}}
@@ -211,19 +214,32 @@ const revOf = (wid, uid) => uid && S.reviews[wid] && S.reviews[wid][uid];
 // 같이 했는데 상대만 별점을 남긴 것 (내가 남기면 열린다)
 const waitingRevs = (kind) => S.wishes.filter((w) => w.kind === kind && w.done_on && revOf(w.id, pid()) && !revOf(w.id, me()));
 
-function priceOf(key) {
-  if (key.startsWith("wall:")) return (WALL[key.slice(5)] || {}).price || 0;
-  if (key.startsWith("floor:")) return (FLOOR[key.slice(6)] || {}).price || 0;
-  return (OBJ[key] || {}).price || 0;
+// 산 것의 하트 값: 나무 배경만 센다 (예전 방 꾸미기 소품·벽지는 이제 안 세니 그 하트는 돌아온다)
+const priceOf = (key) => (key.startsWith("bg:") && BG[key.slice(3)] ? BG[key.slice(3)].price : 0);
+// 물 준 날 → 그날 준 사람들. ym을 주면 그 달만
+function waterDays(ym) {
+  const out = {};
+  for (const r of S.room) {
+    if (!r.object_key.startsWith("water:")) continue;
+    const ds = r.object_key.slice(6);
+    if (ym && ds.slice(0, 7) !== ym) continue;
+    (out[ds] || (out[ds] = new Set())).add(r.bought_by);
+  }
+  return out;
 }
-// 하트 = 시작 선물 + 둘이 한 활동 − 산 물건. 따로 저장하지 않고 매번 센다.
-function hearts() {
+const wateredOn = (ds, uid) => !!uid && S.room.some((r) => r.object_key === "water:" + ds && r.bought_by === uid);
+const waterHearts = (days) => Object.values(days).reduce((a, s) => a + s.size * H.water + (s.size >= 2 ? H.waterBoth : 0), 0);
+// 모은 하트 (쓴 것 포함, 줄지 않는다) — 나무는 이걸로 자란다
+function earned() {
   let n = H.start + S.entryCount * H.entry;
   for (const k in S.answers) n += Object.keys(S.answers[k]).length * H.answer;
   for (const k in S.picks) n += Object.keys(S.picks[k]).length * H.pick;
-  for (const it of S.room) n -= priceOf(it.object_key);
-  return n;
+  n += S.wishes.filter((w) => w.done_on).length * H.done;
+  return n + waterHearts(waterDays());
 }
+const spent = () => S.room.reduce((a, it) => a + priceOf(it.object_key), 0);
+// 지갑 하트 = 모은 하트 − 배경에 쓴 하트. 따로 저장하지 않고 매번 센다.
+const hearts = () => earned() - spent();
 
 /* ---------- 기념일 ---------- */
 function annivLabel(ds) {
@@ -507,8 +523,6 @@ function DemoApi() {
     const bo = shuffled(BAL, hashStr(couple.id) ^ 0x9E3779B9);
     bo.slice(0, 6).forEach((b, i) => D.picks.push({ item_id: b.id, user_id: YOU, pick: i % 3 ? "a" : "b", created_at: now }));
     bo.slice(0, 3).forEach((b, i) => D.picks.push({ item_id: b.id, user_id: ME, pick: i % 2 ? "b" : "a", created_at: now }));
-    const put = (key, x, y) => D.room.push({ id: uuid(), couple_id: couple.id, object_key: key, x, y, scale: 1, flip: false, placed: true, created_at: now });
-    put("window", 72, 42); put("sofa", 47, 88); put("pot", 15, 86);
     const e1 = { id: uuid(), couple_id: couple.id, user_id: YOU, day: addDays(today(), -2),
                  memo: "처음 가 본 파스타집 진짜 맛있었다. 다음엔 크림 말고 로제!", photo_path: null, thumb_path: null, created_at: now };
     const ph = demoPhoto();
@@ -562,6 +576,18 @@ function DemoApi() {
     D.entries.push({ id: uuid(), couple_id: cid, user_id: YOU, day: clampYmd(py, pm, d), memo: "처음으로 같이 한강에서 라면 먹은 날 🍜",
       photo_path: null, thumb_path: null, created_at: now });
   }
+  // 나무 물 주기 예시: 지난 40일 (가끔 한 사람만) + 오늘은 상대가 먼저 줬다. 내가 오늘 물을 주면 '큰 나무'로 자라는 쯤으로 맞췄다
+  function seedTree() {
+    D.tree = true;
+    const cid = D.couple.id;
+    const w = (ds, who) => D.room.push({ id: uuid(), couple_id: cid, object_key: "water:" + ds, x: 50, y: 70, scale: 1, flip: false, placed: false,
+      bought_by: who, created_at: new Date(`${ds}T${who === ME ? "08:10" : "21:40"}:00`).toISOString() });
+    for (let k = 40; k >= 1; k--) {
+      const ds = addDays(today(), -k);
+      if (k % 7 === 3) w(ds, k % 2 ? YOU : ME); else { w(ds, ME); w(ds, YOU); }
+    }
+    w(today(), YOU);
+  }
   // 일정 예시: 둘의 생일(매년) · 토요일마다 같이 하는 것(매주)
   function seedEvents() {
     const now = stamp(), y96 = (ds) => "1996" + ds.slice(4);      // 1996년은 윤년이라 2월 29일도 된다
@@ -606,6 +632,7 @@ function DemoApi() {
       if (!D.kids) { seedKids(); save(); }
       if (!D.events) { seedEvents(); save(); }
       if (!D.v9) { seedV9(); save(); }
+      if (!D.tree) { seedTree(); save(); }
       return { id: D.as, email: D.as === ME ? "하늘@데모" : "바다@데모" };
     },
     async signOut() {},
@@ -643,7 +670,7 @@ function DemoApi() {
       delete D.photos[e.photo_path]; delete D.photos[e.thumb_path]; save();
     },
     async buyItem(object_key, extra) {
-      const it = { id: uuid(), couple_id: D.couple.id, object_key, x: 50, y: 74, scale: 1, flip: false, placed: false, created_at: stamp(), ...extra };
+      const it = { id: uuid(), couple_id: D.couple.id, object_key, x: 50, y: 74, scale: 1, flip: false, placed: false, bought_by: uid(), created_at: stamp(), ...extra };
       D.room.push(it); save(); return copy(it);
     },
     async updateItem(id, patch) { const it = D.room.find((r) => r.id === id); if (it) Object.assign(it, patch); save(); },
@@ -782,7 +809,7 @@ async function flushRemote() {
     }
     if (ts.includes("answers")) setAnswers(await S.api.loadAnswers());
     if (ts.includes("balance_picks")) setPicks(await S.api.loadPicks());
-    if (ts.includes("room_items") && !S.dragging) S.room = await S.api.loadRoom();
+    if (ts.includes("room_items")) S.room = await S.api.loadRoom();
     if (ts.includes("wishes") || ts.includes("wish_reviews")) await loadWishData();
     if (ts.includes("events")) await loadEventData();
     if (ts.includes("letters")) await loadLetterData();
@@ -793,7 +820,7 @@ async function flushRemote() {
       for (const ym of Object.keys(S.entries)) await loadMonth(ym, true);
     }
   } catch (e) { console.warn(e); return; }
-  if (!S.dragging) { renderTab(); sheetRefresh(); }
+  renderTab(); sheetRefresh();
 }
 
 /* =====================================================================
@@ -816,7 +843,7 @@ function drawSheet() {
   $("#sheetBody").replaceChildren(...[sheetDraw()].flat(Infinity).filter(Boolean));
 }
 function sheetRefresh() {
-  if (!sheetDraw || S.dragging) return;
+  if (!sheetDraw) return;
   const a = document.activeElement;
   if (a && $("#sheetBody").contains(a) && (a.tagName === "TEXTAREA" || a.tagName === "INPUT")) return;   // 쓰는 중이면 그대로 둔다
   drawSheet();
@@ -1122,9 +1149,7 @@ function renderHome() {
   for (const l of newLetters()) parts.push(h("button", { class: "card letter-in", onclick: () => openLetter(l.id) },
     h("span", { class: "ev-ic" }, "💌"), h("span", { class: "grow" }, h("span", { class: "upc-t" }, `${josa(nick(l.from_user), "의")} 편지가 도착했어요`),
       h("span", { class: "sub" }, l.title || "눌러서 읽어 보세요"))));
-  parts.push(roomEl(false));
-  parts.push(h("div", { class: "room-bar" }, h("span", { class: "hearts" }, `♥ ${Math.max(0, hearts())}`),
-    h("button", { class: "btn sm soft", onclick: openRoomEditor }, "🛋️ 방 꾸미기")));
+  parts.push(treeCard());
   parts.push(qCard(todayQ(), "오늘의 질문"));
   if (!S.memories || S.memories.for !== today()) loadMemories();
   parts.push(memoryCard());
@@ -1140,138 +1165,176 @@ function renderHome() {
   view(...parts);
 }
 
-/* ---------------- 우리 방 ---------------- */
-function roomEl(editing) {
-  const wall = WALL[S.couple.wall] || DATA.walls[0], floor = FLOOR[S.couple.floor] || DATA.floors[0];
-  const room = h("div", { class: "room" + (editing ? " editing" : "") },
-    h("div", { class: "wall", style: { background: wall.css } }),
-    h("div", { class: "floor", style: { background: floor.css } }));
-  const items = S.room.filter((r) => r.placed && OBJ[r.object_key]);
-  if (!items.length && !editing) room.append(h("div", { class: "room-empty", style: { whiteSpace: "pre-line" } }, "아직 텅 빈 우리 방\n하트를 모아 소품을 들여 보세요"));
-  for (const it of items) room.append(objEl(it, editing));
-  if (editing) room.addEventListener("pointerdown", (e) => {
-    if (!e.target.classList.contains("obj") && S.sel) { S.sel = null; drawSheet(); }
-  });
-  return room;
+/* ---------------- 함께 키우는 나무 ---------------- */
+// 단계: 모은 하트(줄지 않는다) 기준. 꽃 피는 나무 다음부터는 주변 숲이 한 그루씩 는다
+function treeLevel(n = earned()) {
+  const st = DATA.treeStages, top = st[st.length - 1].at;
+  let i = 0;
+  while (i + 1 < st.length && n >= st[i + 1].at) i++;
+  const forest = n >= top ? Math.min(DATA.forestMax, Math.floor((n - top) / DATA.forestEvery)) : 0;
+  let from = null, next = null, nextName = "";
+  if (i + 1 < st.length) { from = st[i].at; next = st[i + 1].at; nextName = st[i + 1].name; }
+  else if (forest < DATA.forestMax) { from = top + forest * DATA.forestEvery; next = from + DATA.forestEvery; nextName = `숲 ${forest + 1}그루`; }
+  return { ...st[i], stage: i, forest, n, from, next, nextName };
 }
-function objEl(it, editing) {
-  const o = OBJ[it.object_key];
-  const el = h("div", { class: "obj" + (editing && S.sel === it.id ? " sel" : ""), "data-id": it.id, role: editing ? "button" : null, "aria-label": o.name }, o.e);
-  el.style.left = it.x + "%";
-  el.style.top = it.y + "%";
-  el.style.zIndex = String(Math.round(it.y * 10));        // 아래(앞)에 있을수록 위에 그린다
-  el.style.setProperty("--s", String((o.s || 1) * (it.scale || 1)));
-  el.style.setProperty("--f", it.flip ? "-1" : "1");
-  if (editing) dragify(el, it);
-  return el;
+const realSeason = (d) => { const m = d.getMonth() + 1; return m >= 3 && m <= 5 ? "spring" : m >= 6 && m <= 8 ? "summer" : m >= 9 && m <= 11 ? "autumn" : "winter"; };
+// 지금 고정해 둔 배경 (없으면 날짜 따라 저절로)
+function fixedBg() {
+  const r = S.room.find((x) => x.placed && x.object_key.startsWith("bg:") && BG[x.object_key.slice(3)]);
+  return r ? r.object_key.slice(3) : null;
 }
-function dragify(el, it) {
-  el.addEventListener("pointerdown", (e) => {
-    e.preventDefault(); e.stopPropagation();
-    const room = el.parentElement, r = room.getBoundingClientRect();
-    const sx = e.clientX, sy = e.clientY, ox = it.x, oy = it.y;
-    let moved = false;
-    if (S.sel !== it.id) {
-      S.sel = it.id;
-      room.querySelectorAll(".obj.sel").forEach((x) => x.classList.remove("sel"));
-      el.classList.add("sel");
-    }
-    S.dragging = true;
-    try { el.setPointerCapture(e.pointerId); } catch (err) { /* 무시 */ }
-    const move = (ev) => {
-      const dx = (ev.clientX - sx) / r.width * 100, dy = (ev.clientY - sy) / r.height * 100;
-      if (Math.abs(dx) + Math.abs(dy) > 0.6) moved = true;
-      it.x = clamp(ox + dx, 3, 97); it.y = clamp(oy + dy, 10, 100);
-      el.style.left = it.x + "%"; el.style.top = it.y + "%"; el.style.zIndex = String(Math.round(it.y * 10));
-    };
-    const up = () => {
-      el.removeEventListener("pointermove", move); el.removeEventListener("pointerup", up); el.removeEventListener("pointercancel", up);
-      S.dragging = false;
-      if (moved) S.api.updateItem(it.id, { x: it.x, y: it.y }).catch((err) => toast(errMsg(err)));
-      drawSheet();
-    };
-    el.addEventListener("pointermove", move);
-    el.addEventListener("pointerup", up);
-    el.addEventListener("pointercancel", up);
-  });
+const ownsBg = (id) => !!BG[id] && (BG[id].price === 0 || S.room.some((r) => r.object_key === "bg:" + id));
+const treeNames = () => { const p = partner(); return p ? `${nick(me())} ♥ ${nick(p.user_id)}` : nick(me()); };
+const treeSeed = () => hashStr(S.couple.id) % 100000;      // 둘의 폰이 같은 숲 모양을 본다
+// 홈 나무 그림 옵션: 이 폰의 지금 시각(해·달) · 오늘 날짜(명절·기념일·계절) · 고정한 배경
+function treeOpts() {
+  const now = new Date(), L = treeLevel();
+  const auto = TREE.sceneFor(now, S.couple.start_date), fixed = fixedBg();
+  let o = auto;
+  if (fixed && fixed !== auto.scene) o = { ...auto, scene: fixed, season: BG[fixed].season || realSeason(now), christmas: fixed === "london", year: undefined };
+  if (!o.special && eventsOn(today()).some((e) => e.icon === "🎂")) o = { ...o, special: "birthday" };     // 생일엔 풍선
+  return { ...o, stage: L.stage, forest: L.forest, hour: now.getHours() + now.getMinutes() / 60, names: treeNames(), seed: treeSeed() };
 }
-function openRoomEditor() {
-  S.editing = true; S.sel = null;
-  openSheet(drawEditor, { onClose: () => { S.editing = false; S.sel = null; renderTab(); } });
+const TREE_SEEN = "duriseo_tree_lv";       // 이 폰에서 마지막으로 본 단계 (자라면 한 번 축하)
+function treeCard() {
+  if (!TREE) return null;
+  const L = treeLevel(), o = treeOpts(), t = today(), p = partner(), fixed = fixedBg();
+  const art = h("button", { class: "tree-art", "aria-label": `우리 나무 ${L.name}. 눌러서 배경 바꾸기`, onclick: openBgShop });
+  art.innerHTML = TREE.svg(o);
+  art.append(h("span", { class: "tree-tag" }, (BG[o.scene] || {}).name || "", fixed ? " · 고정" : ""));
+  const mine = wateredOn(t, me()), theirs = !!p && wateredOn(t, p.user_id);
+  const chip = (uid, did) => did ? h("span", { class: "chip mint" }, `💧 ${josa(nick(uid), "가")} 줬어요`)
+    : h("span", { class: "chip gray" }, `${josa(nick(uid), "는")} 아직`);
+  const pct = L.next ? clamp((L.n - L.from) / (L.next - L.from) * 100, 0, 100) : 100;
+  const lv = L.stage * 100 + L.forest, key = `${TREE_SEEN}:${S.couple.id}`;
+  let seen = null;
+  try { seen = localStorage.getItem(key); localStorage.setItem(key, String(lv)); } catch (e) { /* 무시 */ }
+  const grew = seen != null && lv > Number(seen);
+  if (grew) setTimeout(() => toast(Number(seen) >= 500 ? `🌳 우리 숲에 나무가 한 그루 늘었어요 (${L.forest}그루)` : `🎉 나무가 자랐어요! 이제 ${L.ic} ${L.name}`), 1500);
+  const water = h("button", { class: "btn grow", disabled: mine || null, onclick: () => waterTree(water) }, mine ? "💧 오늘 물 줬어요" : "💧 물 주기");
+  return h("div", { class: "tree-card" + (grew ? " grew" : "") }, art,
+    h("div", { class: "tree-info" },
+      h("div", { class: "row" },
+        h("div", { class: "tree-lv grow" }, `${L.ic} ${L.name}`, h("small", {}, `Lv.${L.stage + 1}` + (L.forest ? ` · 우리 숲 ${L.forest}그루` : ""))),
+        h("span", { class: "hearts" }, `♥ ${Math.max(0, hearts())}`)),
+      h("div", { class: "tree-bar", role: "progressbar", "aria-label": "다음 단계까지", "aria-valuenow": Math.round(pct), "aria-valuemin": 0, "aria-valuemax": 100 },
+        h("i", { style: { width: pct + "%" } })),
+      h("div", { class: "tiny" }, L.next ? `${L.nextName}까지 ♥ ${L.next - L.n} 남았어요 · 물 주기 · 질문 · 기록으로 자라요` : "우리 숲이 다 자랐어요 🌳"),
+      h("div", { class: "qstat" }, chip(me(), mine), p ? chip(p.user_id, theirs) : null,
+        mine && theirs ? h("span", { class: "chip" }, `💕 둘 다 줘서 ♥+${H.waterBoth} 더`) : null),
+      h("div", { class: "row" }, water, h("button", { class: "btn soft", onclick: openBgShop }, "🎨 배경"))));
 }
-function adjust(it, patch) {
-  Object.assign(it, patch);
-  drawSheet();
-  S.api.updateItem(it.id, patch).catch((err) => toast(errMsg(err)));
-}
-function drawEditor() {
-  const sel = S.room.find((r) => r.id === S.sel && r.placed);
-  const tools = h("div", { class: "tools" }, sel ? [
-    h("button", { class: "btn sm line", onclick: () => adjust(sel, { scale: +clamp((sel.scale || 1) - 0.15, 0.5, 2.2).toFixed(2) }) }, "작게"),
-    h("button", { class: "btn sm line", onclick: () => adjust(sel, { scale: +clamp((sel.scale || 1) + 0.15, 0.5, 2.2).toFixed(2) }) }, "크게"),
-    h("button", { class: "btn sm line", onclick: () => adjust(sel, { flip: !sel.flip }) }, "뒤집기"),
-    h("button", { class: "btn sm soft", onclick: () => { S.sel = null; adjust(sel, { placed: false }); } }, "보관함에 넣기"),
-  ] : h("span", { class: "tiny", style: { alignSelf: "center" } }, "소품을 눌러 고르고, 끌어서 옮겨요"));
-  const tabs = [["shop", "상점"], ["box", "보관함"], ["theme", "벽지·바닥"]];
-  return [
-    h("div", { class: "row" }, h("div", { class: "h2 grow" }, "우리 방 꾸미기"), h("span", { class: "hearts" }, `♥ ${Math.max(0, hearts())}`)),
-    roomEl(true),
-    tools,
-    h("div", { class: "seg" }, tabs.map(([k, l]) => segBtn(l, S.shopTab === k, () => { S.shopTab = k; drawSheet(); }))),
-    S.shopTab === "shop" ? shopGrid() : S.shopTab === "box" ? boxGrid() : themeGrid(),
-  ];
-}
-function shopGrid() {
-  return Object.entries(DATA.objCats).map(([cat, name]) => [
-    h("div", { class: "sec" }, name),
-    h("div", { class: "shop" }, DATA.objects.filter((o) => o.cat === cat).map((o) => {
-      const owned = S.room.filter((r) => r.object_key === o.key).length;
-      return h("button", { class: owned ? "own" : "", onclick: () => buy(o) },
-        h("span", { class: "e" }, o.e), h("span", {}, o.name), h("span", { class: "p" }, `♥${o.price}`),
-        owned ? h("span", { class: "tiny" }, `${owned}개 있음`) : null);
-    })),
-  ]);
-}
-async function buy(o) {
-  const left = hearts();
-  if (left < o.price) return toast(`하트가 ${o.price - left}개 모자라요`);
+// 물 주기: 하루 한 번, 각자. 둘 다 주면 그날 보너스
+async function waterTree(btn) {
+  const t = today();
+  if (wateredOn(t, me())) return;
+  btn.disabled = true;
   let it;
-  try { it = await S.api.buyItem(o.key, { placed: true, x: 50, y: 76 }); } catch (err) { return toast(errMsg(err)); }
-  S.room.push(it); S.sel = it.id;
-  drawSheet();
-  toast(`${o.e} ${josa(o.name, "를 들였어요")} (♥−${o.price})`);
-}
-function boxGrid() {
-  const box = S.room.filter((r) => !r.placed && OBJ[r.object_key]);
-  if (!box.length) return h("p", { class: "empty" }, "보관함이 비었어요. 방에서 소품을 골라 ‘보관함에 넣기’를 누르면 여기로 와요");
-  return h("div", { class: "shop" }, box.map((r) => {
-    const o = OBJ[r.object_key];
-    return h("button", { onclick: () => { S.sel = r.id; adjust(r, { placed: true, x: 50, y: 76 }); } },
-      h("span", { class: "e" }, o.e), h("span", {}, o.name), h("span", { class: "tiny" }, "꺼내기"));
-  }));
-}
-function themeGrid() {
-  const block = (title, list, kind) => [
-    h("div", { class: "sec" }, title),
-    h("div", { class: "shop" }, list.map((t) => {
-      const owned = t.price === 0 || S.room.some((r) => r.object_key === `${kind}:${t.key}`);
-      const on = (S.couple[kind] || list[0].key) === t.key;
-      return h("button", { class: on ? "own" : "", onclick: () => setTheme(kind, t, owned) },
-        h("span", { class: "swatch", style: { background: t.css } }), h("span", {}, t.name),
-        on ? h("span", { class: "tiny" }, "사용 중") : owned ? h("span", { class: "tiny" }, "바꾸기") : h("span", { class: "p" }, `♥${t.price}`));
-    })),
-  ];
-  return [block("벽지", DATA.walls, "wall"), block("바닥", DATA.floors, "floor")];
-}
-async function setTheme(kind, t, owned) {
-  if (!owned) {
-    const left = hearts();
-    if (left < t.price) return toast(`하트가 ${t.price - left}개 모자라요`);
-    try { S.room.push(await S.api.buyItem(`${kind}:${t.key}`, { placed: false })); } catch (err) { return toast(errMsg(err)); }
+  try { it = await S.api.buyItem("water:" + t, { placed: false }); } catch (err) { btn.disabled = false; return toast(errMsg(err)); }
+  if (!S.room.some((r) => r.id === it.id)) S.room.push(it);
+  const both = wateredOn(t, pid());
+  renderTab();
+  const art = $("#view .tree-art");
+  if (art) for (let i = 0; i < 7; i++) {
+    const d = h("span", { class: "drop", style: { left: `${28 + Math.random() * 44}%`, animationDelay: `${(i * 0.13).toFixed(2)}s` } }, "💧");
+    art.append(d); setTimeout(() => d.remove(), 2400);
   }
-  S.couple[kind] = t.key;
-  drawSheet();
-  try { await S.api.updateCouple({ [kind]: t.key }); } catch (err) { toast(errMsg(err)); }
+  toast(both ? `💧 물을 줬어요 · 둘 다 줘서 ♥+${H.water + H.waterBoth}`
+    : `💧 물을 줬어요 ♥+${H.water}` + (pid() ? ` · ${nick(pid())}도 주면 ♥+${H.waterBoth} 더` : ""));
+}
+
+/* 배경 상점: 하트로 열고, 연 배경은 언제든 고정. 고정을 풀면 날짜 따라 저절로 */
+function openBgShop() { S.bgPick = null; openSheet(drawBgShop, { onClose: () => { S.bgPick = null; } }); }
+function bgOpts(id, L) {
+  const b = BG[id];
+  return { scene: id, season: b.season || realSeason(new Date()), christmas: id === "london", hour: BG_HOUR[id] || 13,
+           stage: L.stage, forest: L.forest, special: id === "park" ? "anniv" : null, names: treeNames(), seed: treeSeed() };
+}
+// 작은 그림은 위에서부터 몇 개씩 나눠 그리고, 그린 건 기억해 둔다 (배경이 32개라 한 번에 다 그리면 시트가 늦게 뜬다)
+const bgCache = new Map(), bgQueue = [];
+let bgTimer = null;
+function bgPaint(box) {
+  const k = box.dataset.k;
+  if (!bgCache.has(k)) bgCache.set(k, TREE.svg(bgOpts(box.dataset.id, treeLevel())));
+  box.innerHTML = bgCache.get(k);
+}
+function bgPump() {
+  bgTimer = null;
+  for (let n = 0; n < 3 && bgQueue.length;) { const box = bgQueue.shift(); if (box.isConnected && !box.firstChild) { bgPaint(box); n++; } }
+  if (bgQueue.length) bgTimer = setTimeout(bgPump, 40);
+}
+function bgThumb(id, L) {
+  const box = h("span", { class: "th", "data-id": id, "data-k": `${id}|${L.stage}|${L.forest}|${treeNames()}` });
+  if (bgCache.has(box.dataset.k)) { bgPaint(box); return box; }
+  bgQueue.push(box);
+  if (!bgTimer) bgTimer = setTimeout(bgPump, 60);       // 시트가 먼저 뜨고 나서
+  return box;
+}
+function bgTile(id, L, fixed) {
+  const b = BG[id], owned = ownsBg(id), on = fixed === id;
+  return h("button", { class: "bg-tile" + (on ? " on" : "") + (owned ? "" : " lock"), onclick: () => { S.bgPick = id; drawSheet(); $("#sheet .panel").scrollTop = 0; } },
+    bgThumb(id, L),
+    h("span", { class: "cap" }, h("span", { class: "nm" }, b.name),
+      h("span", { class: "st" }, on ? h("span", { class: "on-t" }, "사용 중") : owned ? (b.price ? "열었어요" : "무료") : h("span", { class: "p" }, `♥ ${b.price}`),
+        BG_AUTO[id] ? h("span", { class: "tiny" }, ` · ${BG_AUTO[id]}`) : null)));
+}
+function bgPreview(id, L) {
+  const b = BG[id], owned = ownsBg(id), on = fixedBg() === id, left = hearts();
+  const art = h("div", { class: "bg-big" });
+  art.innerHTML = TREE.svg(bgOpts(id, L));
+  const act = on ? h("button", { class: "btn wide line", onclick: () => setBg(null) }, "📅 날짜 따라 바뀌게 되돌리기")
+    : owned ? h("button", { class: "btn wide", onclick: () => setBg(id) }, "🎨 이 배경으로 고정하기")
+    : left < b.price ? h("button", { class: "btn wide", disabled: true }, `하트가 ${b.price - left}개 모자라요`)
+    : h("button", { class: "btn wide", onclick: () => buyBg(id) }, `열고 고정하기 · ♥ ${b.price}`);
+  return h("div", { class: "bg-pick" }, art,
+    h("div", { class: "bg-pick-in" },
+      h("div", { class: "row" }, h("div", { class: "h2 grow" }, b.name), h("span", { class: "chip gray" }, b.group)),
+      h("p", { class: "sub" }, (BG_AUTO[id] ? `${BG_AUTO[id]}엔 열지 않아도 저절로 나와요. ` : "") + (owned ? "언제든 이 배경으로 고정할 수 있어요." : "하트로 열면 언제든 이 배경으로 고정할 수 있어요.")),
+      act,
+      h("button", { class: "btn ghost", onclick: () => { S.bgPick = null; drawSheet(); } }, "다른 배경 보기")));
+}
+function drawBgShop() {
+  const L = treeLevel(), fixed = fixedBg(), auto = TREE.sceneFor(new Date(), S.couple.start_date);
+  const groups = [...new Set(TREE.CATALOG.map((c) => c[3]))];
+  return [
+    h("div", { class: "row" }, h("div", { class: "h2 grow" }, "🎨 나무 배경"), h("span", { class: "hearts" }, `♥ ${Math.max(0, hearts())}`)),
+    S.bgPick && BG[S.bgPick] ? bgPreview(S.bgPick, L) : null,
+    h("button", { class: "bg-auto" + (fixed ? "" : " on"), onclick: () => (fixed ? setBg(null) : null) },
+      h("span", { class: "ev-ic" }, "📅"),
+      h("span", { class: "grow" }, h("b", {}, "날짜 따라 저절로"),
+        h("span", { class: "tiny", style: { display: "block" } }, `명절 · 기념일 · 계절에 맞춰 바뀌어요. 오늘은 ${(BG[auto.scene] || {}).name || ""}`)),
+      fixed ? h("span", { class: "tiny" }, "바꾸기") : h("span", { class: "chip mint" }, "사용 중")),
+    groups.map((g) => [h("div", { class: "sec" }, g),
+      h("div", { class: "bgs" }, TREE.CATALOG.filter((c) => c[3] === g).map(([id]) => bgTile(id, L, fixed)))]),
+    h("p", { class: "tiny center" }, "연 배경은 둘이 같이 써요. 배경에 하트를 써도 나무는 줄지 않아요."),
+  ];
+}
+async function buyBg(id) {
+  const b = BG[id];
+  if (ownsBg(id)) return setBg(id);
+  const left = hearts();
+  if (left < b.price) return toast(`하트가 ${b.price - left}개 모자라요`);
+  try { S.room.push(await S.api.buyItem("bg:" + id, { placed: false })); } catch (err) { return toast(errMsg(err)); }
+  await setBg(id, true);
+  toast(`${b.name} 배경을 열었어요 (♥−${b.price})`);
+}
+// 고정할 배경 줄만 placed로 (id가 없으면 전부 풀어서 날짜 따라)
+async function setBg(id, quiet) {
+  if (id && !S.room.some((r) => r.object_key === "bg:" + id)) {        // 무료 배경(호숫가)은 고정할 때 한 줄 만든다
+    try { S.room.push(await S.api.buyItem("bg:" + id, { placed: false })); } catch (err) { return toast(errMsg(err)); }
+  }
+  const jobs = [];
+  let taken = false;
+  for (const r of S.room) {
+    if (!r.object_key.startsWith("bg:")) continue;
+    const want = !!id && !taken && r.object_key === "bg:" + id;
+    if (want) taken = true;
+    if (!!r.placed !== want) { r.placed = want; jobs.push(S.api.updateItem(r.id, { placed: want })); }
+  }
+  S.bgPick = null;
+  drawSheet(); renderTab();
+  try { await Promise.all(jobs); } catch (err) { return toast(errMsg(err)); }
+  if (!quiet) toast(id ? `${BG[id].name} 배경으로 바꿨어요` : "📅 이제 날짜 따라 배경이 바뀌어요");
 }
 
 /* ---------------- 캘린더 ---------------- */
@@ -2231,14 +2294,17 @@ function monthStats(ym) {
   const done = (kind) => S.wishes.filter((w) => w.kind === kind && w.done_on && w.done_on.slice(0, 7) === ym).length;
   const added = (u) => S.wishes.filter((w) => w.added_by === u && ymOf(w.created_at) === ym).length;
   const cnt = (arr, u) => arr.filter((x) => x === u).length;
+  const wd = waterDays(ym), wWho = Object.values(wd).flatMap((s) => [...s]);
+  const doneN = S.wishes.filter((w) => w.done_on && w.done_on.slice(0, 7) === ym).length;
   return {
     entries: ents.length, photos: ents.filter((r) => r.photo).length,
     bothQ: Q.filter((q) => bothAnswered(q.id) && ymOf(lastAt(q.id)) === ym).length,
     match: bothB.length ? Math.round(same / bothB.length * 100) : null, matchN: bothB.length,
     places: done("place"), movies: done("movie"), buckets: done("bucket"),
-    hearts: ents.length * H.entry + ans.length * H.answer + picks.length * H.pick,
+    hearts: ents.length * H.entry + ans.length * H.answer + picks.length * H.pick + doneN * H.done + waterHearts(wd),
     per: [["기록", cnt(ents.map((r) => r.user_id), my), cnt(ents.map((r) => r.user_id), p)],
-          ["질문 답", cnt(ans, my), cnt(ans, p)], ["밸런스", cnt(picks, my), cnt(picks, p)], ["목록 담기", added(my), added(p)]],
+          ["질문 답", cnt(ans, my), cnt(ans, p)], ["밸런스", cnt(picks, my), cnt(picks, p)], ["목록 담기", added(my), added(p)],
+          ["나무 물 주기", cnt(wWho, my), cnt(wWho, p)]],
   };
 }
 function tile(label, value, sub) {
@@ -2276,7 +2342,7 @@ function renderStats() {
     const mine = by[me()], theirs = pid() && by[pid()];
     return [mine && mine.stars, mine && theirs && theirs.stars].filter(Boolean);
   });
-  const spent = S.room.reduce((a, it) => a + priceOf(it.object_key), 0);
+  const used = spent();
   const doneAll = (k) => S.wishes.filter((w) => w.kind === k && w.done_on).length;
   view(
     h("div", { class: "title" }, "통계"),
@@ -2301,7 +2367,7 @@ function renderStats() {
       tile("밸런스 일치율", allB.length ? `${Math.round(allSame / allB.length * 100)}%` : "–", `${allB.length}개 중 ${allSame}개 같음`),
       tile("다녀온 곳", `${doneAll("place")}곳`), tile("같이 본 영화", `${doneAll("movie")}편`), tile("이룬 버킷리스트", `${doneAll("bucket")}개`),
       tile("주고받은 편지", `${S.letters.length}통`), tile("우리 평균 별점", stars.length ? `★ ${(stars.reduce((a, b) => a + b, 0) / stars.length).toFixed(1)}` : "–", stars.length ? `별점 ${stars.length}개` : ""),
-      tile("모은 하트", `♥ ${hearts() + spent}`, `방 꾸미기에 ♥${spent} 씀`)),
+      tile("모은 하트", `♥ ${earned()}`, used ? `나무 배경에 ♥${used} 씀` : `나무: ${treeLevel().name}`)),
   );
 }
 
@@ -2504,7 +2570,8 @@ function renderUs() {
   if (!p) parts.push(inviteCard());
   parts.push(h("div", { class: "card", style: col(4) },
     h("div", { class: "row" }, h("div", { class: "h2 grow" }, "우리 하트"), h("span", { class: "hearts" }, `♥ ${Math.max(0, hearts())}`)),
-    h("p", { class: "sub" }, `질문에 답하면 +${H.answer}, 캘린더에 기록하면 +${H.entry}, 밸런스를 고르면 +${H.pick}. 둘이 모은 하트로 방을 꾸며요.`)));
+    h("p", { class: "sub" }, `나무에 물 주기 +${H.water} (그날 둘 다 주면 +${H.waterBoth} 더), 질문에 답하면 +${H.answer}, 캘린더에 기록하면 +${H.entry}, `
+      + `밸런스를 고르면 +${H.pick}, 다녀왔어요 · 같이 봤어요 · 이뤘어요 +${H.done}. 모은 하트만큼 나무가 자라고, 하트로 나무 배경을 열어요.`)));
   parts.push(pushCard());
   const b1 = h("button", { class: "btn wide soft", onclick: () => doBackup(true, b1) }, "📸 사진까지 전부 받기");
   const b2 = h("button", { class: "btn wide line", onclick: () => doBackup(false, b2) }, "📝 글만 받기 (가벼워요)");
@@ -2584,7 +2651,16 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && S.couple) ["couples", "answers", "balance_picks", "room_items", "entries", "wishes", "events", "letters"].forEach(onRemote);
 });
 
+// 홈의 나무는 시각(해·달·하늘색)에 따라 바뀌니 5분마다 그림만 다시 그린다. 날짜가 바뀌면 홈 전체를 (물 주기가 새로 열린다)
+let treeDay = today();
+setInterval(() => {
+  if (!S.couple || !TREE || document.visibilityState !== "visible") return;
+  if (today() !== treeDay) { treeDay = today(); if (S.tab === "home") renderTab(); return; }
+  const svg = S.tab === "home" && $("#view .tree-art svg");
+  if (svg) svg.outerHTML = TREE.svg(treeOpts());
+}, 5 * 60e3);
+
 // 테스트에서 들여다볼 수 있게 열어 둔다
-window.__duriseo = { S, Q, BAL, todayQ, hearts, questionOrder, annivLabel, occursOn, nextOcc, upcoming };
+window.__duriseo = { S, Q, BAL, todayQ, hearts, earned, treeLevel, treeOpts, questionOrder, annivLabel, occursOn, nextOcc, upcoming };
 boot();
 })();

@@ -122,8 +122,6 @@ button{background:none;border:none;cursor:pointer;touch-action:manipulation}
 @keyframes beat{0%,100%{transform:scale(1)}15%{transform:scale(1.18)}30%{transform:scale(1)}}
 .dday{font-family:var(--disp);font-size:30px;color:var(--pink-ink);line-height:1;text-align:right}
 .dday small{display:block;font-family:"Noto Sans KR",sans-serif;font-size:11px;color:var(--sub);font-weight:500;margin-top:4px}
-.room-bar{display:flex;align-items:center;justify-content:space-between;margin-top:-4px}
-.hearts{font-family:var(--disp);font-size:20px;color:var(--pink-ink)}
 .qcard{background:linear-gradient(140deg,#FFF0F3,#FFF8F0);border-radius:var(--r);padding:18px;box-shadow:var(--sh);
   display:flex;flex-direction:column;gap:10px;text-align:left;width:100%}
 .qcard .qt{font-family:var(--disp);font-size:21px;line-height:1.4;word-break:keep-all}
@@ -131,27 +129,41 @@ button{background:none;border:none;cursor:pointer;touch-action:manipulation}
 .anniv{display:flex;align-items:center;gap:12px}
 .anniv .big{font-family:var(--disp);font-size:26px;color:var(--pink-ink);min-width:64px;text-align:center}
 
-/* ---------- 우리 방 ---------- */
-.room{position:relative;width:100%;aspect-ratio:1/.82;border-radius:24px;overflow:hidden;box-shadow:var(--sh);
-  container-type:inline-size;user-select:none;-webkit-user-select:none;background:#FDEBDD;
-  isolation:isolate}  /* 소품 z-index가 방 밖(탭 바·시트)으로 새지 않게 */
-.room .wall{position:absolute;left:0;right:0;top:0;height:64%}
-.room .floor{position:absolute;left:0;right:0;bottom:0;height:36%;box-shadow:inset 0 10px 18px rgba(0,0,0,.08)}
-.room .floor::before{content:"";position:absolute;left:0;right:0;top:0;height:5%;background:rgba(255,255,255,.55)}
-.obj{position:absolute;line-height:1;transform:translate(-50%,-100%) scaleX(var(--f,1));
-  font-size:calc(11cqw * var(--s,1));filter:drop-shadow(0 3px 2px rgba(60,30,20,.18));touch-action:none;cursor:default}
-.room.editing .obj{cursor:grab}
-.obj.sel{filter:drop-shadow(0 0 2px #fff) drop-shadow(0 0 5px var(--pink))}
-.room-empty{position:absolute;inset:0;display:grid;place-items:center;color:var(--sub);font-size:14px;text-align:center;padding:20px}
-.tools{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;min-height:36px}
-.shop{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
-.shop button{background:var(--card);border:1.5px solid var(--line);border-radius:14px;padding:8px 4px 6px;
-  display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;color:var(--sub)}
-.shop button .e{font-size:30px;line-height:1.2}
-.shop button .p{color:var(--pink-ink);font-weight:700}
-.shop button.own{border-color:var(--mint)}
-.swatch{width:100%;aspect-ratio:1.4;border-radius:10px;border:1px solid var(--line)}
-
+/* ---------- 함께 키우는 나무 ---------- */
+.tree-card{background:var(--card);border-radius:24px;box-shadow:var(--sh);overflow:hidden}
+.tree-art{position:relative;display:block;width:100%;aspect-ratio:400/320;background:#CFE2F2;overflow:hidden;cursor:pointer}
+.tree-art svg{display:block;width:100%;height:100%}
+.tree-tag{position:absolute;left:10px;top:10px;padding:3px 10px;border-radius:99px;background:rgba(255,255,255,.84);
+  font-size:12px;font-weight:700;color:var(--ink);box-shadow:0 2px 8px rgba(60,40,30,.12)}
+.tree-info{padding:14px 16px 16px;display:flex;flex-direction:column;gap:9px}
+.tree-lv{font-family:var(--disp);font-size:21px;line-height:1.2}
+.tree-lv small{font-family:"Noto Sans KR",sans-serif;font-size:12px;color:var(--sub);font-weight:500;margin-left:6px}
+.tree-bar{height:10px;border-radius:99px;background:#F3EAE3;overflow:hidden}
+.tree-bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#9EDCB2,#4DB89A);transition:width .6s}
+.tree-card.grew .tree-art::after{content:"✨";position:absolute;left:50%;top:38%;font-size:54px;transform:translate(-50%,-50%);animation:grew 1.8s ease-out forwards;pointer-events:none}
+@keyframes grew{0%{opacity:0;transform:translate(-50%,-50%) scale(.4)}30%{opacity:1;transform:translate(-50%,-50%) scale(1.15)}100%{opacity:0;transform:translate(-50%,-50%) scale(1.5)}}
+.drop{position:absolute;top:-6%;font-size:20px;pointer-events:none;opacity:0;animation:drop 1.4s ease-in forwards}
+@keyframes drop{0%{top:-6%;opacity:0}15%{opacity:1}85%{opacity:1}100%{top:58%;opacity:0}}
+.hearts{font-family:var(--disp);font-size:20px;color:var(--pink-ink)}
+/* 배경 상점 */
+.bg-auto{display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;border:1.5px solid var(--line);border-radius:16px;background:var(--card);text-align:left}
+.bg-auto.on{border-color:var(--mint);box-shadow:0 0 0 2px var(--mint-soft)}
+.bgs{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.bg-tile{display:flex;flex-direction:column;background:var(--card);border:1.5px solid var(--line);border-radius:16px;overflow:hidden;text-align:left}
+.bg-tile.on{border-color:var(--mint);box-shadow:0 0 0 2px var(--mint-soft)}
+.bg-tile .th{display:block;aspect-ratio:400/320;background:#EFE7E0}
+.bg-tile .th svg{display:block;width:100%;height:100%}
+.bg-tile .th svg *{animation-play-state:paused !important}
+.bg-tile.lock .th{filter:saturate(.8) brightness(.97)}
+.bg-tile .cap{display:flex;flex-direction:column;gap:1px;padding:7px 9px 8px}
+.bg-tile .nm{font-size:13px;font-weight:700;line-height:1.35}
+.bg-tile .st{font-size:12px;color:var(--sub)}
+.bg-tile .p{color:var(--pink-ink);font-weight:700}
+.bg-tile .on-t{color:#2E8F74;font-weight:700}
+.bg-pick{background:var(--card);border-radius:20px;overflow:hidden;box-shadow:var(--sh);border:1.5px solid var(--line)}
+.bg-big{aspect-ratio:400/320}
+.bg-big svg{display:block;width:100%;height:100%}
+.bg-pick-in{padding:12px 14px 10px;display:flex;flex-direction:column;gap:8px}
 /* ---------- 캘린더 ---------- */
 .cal-head{display:flex;align-items:center;justify-content:space-between}
 .cal-head .h2{flex:1;text-align:center}
@@ -349,6 +361,7 @@ if (/[?&]demo\b/.test(location.search)) {
 <script src="./config.js"></script>
 <script src="./vendor/supabase.min.js"></script>
 <script src="./data.js"></script>
+<script src="./tree.js"></script>
 <script src="./app.js"></script>
 <script>
 /* 오프라인 지원: http(s)로 열렸을 때만 서비스 워커 등록 */
