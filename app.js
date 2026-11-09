@@ -109,9 +109,18 @@ const WALL = Object.fromEntries(DATA.walls.map((w) => [w.key, w]));
 const FLOOR = Object.fromEntries(DATA.floors.map((f) => [f.key, f]));
 
 // 지도에 저장하는 장소 분류. KCAT은 카카오 장소 분류 코드 → 우리 분류 (저장할 때 처음 골라 두는 값)
-const PCAT = { food: { ic: "🍽️", name: "맛집" }, cafe: { ic: "☕", name: "카페" }, play: { ic: "🎡", name: "놀거리" },
-               trip: { ic: "🧳", name: "여행" }, etc: { ic: "📍", name: "기타" } };
+const PCAT = { food: { ic: "🍽️", name: "맛집" }, cafe: { ic: "☕", name: "카페" }, dessert: { ic: "🍰", name: "디저트" },
+               bar: { ic: "🍺", name: "술집" }, play: { ic: "🎡", name: "놀거리" }, trip: { ic: "🧳", name: "여행" },
+               etc: { ic: "📍", name: "기타" } };
 const KCAT = { FD6: "food", CE7: "cafe", AT4: "play", CT1: "play", AD5: "trip" };
+function guessCat(r) {
+  const n = r.category_name || "";
+  if (/술집|호프|이자카야|와인|칵테일|포차/.test(n)) return "bar";
+  if (/디저트|제과|베이커리|아이스크림|도넛|케이크/.test(n)) return "dessert";
+  return KCAT[r.category_group_code] || "etc";
+}
+// 장소 안에서 근처를 찾을 때 누르는 빠른 버튼 [보이는 글, 검색어]
+const NEAR_QUICK = [["☕ 카페", "카페"], ["🍽️ 맛집", "맛집"], ["🍰 디저트", "디저트"], ["🍺 술집", "술집"], ["🎡 볼거리", "관광명소"]];
 
 // 오늘의 질문: 카테고리를 번갈아 섞은 커플 고유 순서에서, 커플 만든 날부터 하루에 하나씩
 function questionOrder(couple) {
@@ -161,7 +170,8 @@ const S = {
   wishEdit: false,   // 목록 시트에서 제목·메모 고치는 중
   revEdit: false,    // 내 별점 고치는 중
   revDraft: null,    // 쓰는 중인 별점 {stars, text}
-  mapResults: null,  // 장소 검색 결과 {q, loading, list}
+  mapResults: null,  // 장소 검색 결과 {q, loading, list, near: 근처 검색이면 그 장소 id}
+  mapPlace: null,    // 지도 탭에서 들어가 있는 장소 id (그 안에 갈 곳을 모아 보는 화면)
   mapFocus: null,    // 지도를 다시 그릴 때 가운데로 옮길 장소 id
   drafts: {},        // 화면이 다시 그려져도 남겨 둘 입력값 (data-k별)
 };
@@ -405,6 +415,18 @@ function DemoApi() {
                                                address: "서울 용산구 남산공원길 105", place_cat: "play" });
     rev(tower, ME, 4, "야경 최고. 바람은 너무 불었다");
     rev(tower, YOU, 5, "우리 자물쇠 아직 있을까?");
+    seedKids();
+  }
+  // 장소 안에 갈 곳 예시 (이 기능이 생기기 전에 만든 데모에도 한 번 넣는다)
+  function seedKids() {
+    D.kids = true;
+    const p = D.wishes.find((w) => w.kind === "place" && w.title === "북촌 한옥마을" && !w.parent_id);
+    if (!p) return;
+    const now = stamp();
+    const kid = (title, extra) => D.wishes.push({ id: uuid(), couple_id: D.couple.id, kind: "place", title, memo: "", added_by: ME, done_on: null,
+      lat: null, lng: null, address: null, place_url: null, place_cat: "etc", parent_id: p.id, created_at: now, ...extra });
+    kid("골목 안 한옥 찻집 (예시)", { added_by: YOU, place_cat: "cafe", memo: "마당 보이는 창가 자리!", lat: 37.5822, lng: 126.9838, address: "서울 종로구 북촌로" });
+    kid("손칼국수집 (예시)", { place_cat: "food", memo: "점심은 여기서", lat: 37.5809, lng: 126.9861, address: "서울 종로구 계동길" });
   }
   function demoPhoto() {
     try {
@@ -425,6 +447,7 @@ function DemoApi() {
     async session() {
       if (!D) await seed();
       if (!D.wishes) { seedWishes(); save(); }
+      if (!D.kids) { seedKids(); save(); }
       return { id: D.as, email: D.as === ME ? "하늘@데모" : "바다@데모" };
     },
     async signOut() {},
@@ -470,11 +493,14 @@ function DemoApi() {
     async loadReviews() { return copy(D.reviews || []); },
     async addWish(row) {
       const w = { id: uuid(), couple_id: D.couple.id, added_by: uid(), memo: "", done_on: null, lat: null, lng: null,
-                  address: null, place_url: null, place_cat: null, created_at: stamp(), ...row };
+                  address: null, place_url: null, place_cat: null, parent_id: null, created_at: stamp(), ...row };
       D.wishes.push(w); save(); return copy(w);
     },
     async updateWish(id, patch) { const w = D.wishes.find((x) => x.id === id); if (w) Object.assign(w, patch); save(); },
-    async deleteWish(id) { D.wishes = D.wishes.filter((x) => x.id !== id); D.reviews = D.reviews.filter((r) => r.wish_id !== id); save(); },
+    async deleteWish(id) {      // 서버처럼 안에 넣은 곳도 같이 지운다
+      const gone = new Set([id, ...D.wishes.filter((x) => x.parent_id === id).map((x) => x.id)]);
+      D.wishes = D.wishes.filter((x) => !gone.has(x.id)); D.reviews = D.reviews.filter((r) => !gone.has(r.wish_id)); save();
+    },
     async saveReview(wish_id, stars, review) {
       const r = D.reviews.find((x) => x.wish_id === wish_id && x.user_id === uid());
       if (r) Object.assign(r, { stars, review }); else D.reviews.push({ wish_id, couple_id: D.couple.id, user_id: uid(), stars, review, created_at: stamp() });
@@ -763,6 +789,7 @@ function showMain() {
 }
 function go(tab) {
   if (tab === S.tab && tab === "q" && S.qCat) S.qCat = null;    // 질문 탭을 다시 누르면 목록 처음으로
+  if ((tab === S.tab && tab === "map") || tab !== "map") { S.mapPlace = null; S.mapResults = null; clearTemp(); }   // 지도 탭도 마찬가지
   S.tab = tab;
   if (tab !== "q") S.qCat = null;
   renderTab();
@@ -1212,18 +1239,26 @@ function wishNote() {
   return S.wishesErr ? h("div", { class: "banner" }, S.wishesErr) : null;
 }
 // 목록 한 줄. 같이 한 것은 별점 상태(💞 평균 · 🔒 상대만 · ⏳ 나만)를 오른쪽에 보여준다
+const kidsOf = (id) => S.wishes.filter((x) => x.parent_id === id);
+// 장소 안에 넣은 곳을 분류별로 센다 (☕2 🍽️1)
+function kidsSummary(id) {
+  const n = {};
+  for (const k of kidsOf(id)) n[k.place_cat || "etc"] = (n[k.place_cat || "etc"] || 0) + 1;
+  return Object.keys(PCAT).filter((c) => n[c]).map((c) => `${PCAT[c].ic}${n[c]}`).join(" ");
+}
 function wishItem(w) {
   const movie = w.kind === "movie", pc = PCAT[w.place_cat] || PCAT.etc;
   const ic = movie ? (w.done_on ? "🎞️" : "🍿") : pc.ic;
-  const sub = w.done_on ? `${fmtShort(w.done_on)} ${movie ? "같이 봤어요" : "다녀왔어요"}`
+  const base = w.done_on ? `${fmtShort(w.done_on)} ${movie ? "같이 봤어요" : "다녀왔어요"}`
     : (w.memo || (movie ? `${josa(nick(w.added_by), "가")} 담았어요` : (w.address || "")));
+  const sub = !movie && !w.parent_id ? [kidsSummary(w.id), base].filter(Boolean).join(" · ") : base;
   let right = null;
   if (w.done_on) {
     const mine = revOf(w.id, me()), theirs = revOf(w.id, pid());
     right = mine && theirs ? `★ ${((mine.stars + theirs.stars) / 2).toFixed(1).replace(/\.0$/, "")}`
       : theirs ? "🔒" : mine ? "⏳" : "별점 ☆";
   }
-  return h("button", { class: "qitem", onclick: () => openWish(w.id) },
+  return h("button", { class: "qitem", onclick: () => (movie ? openWish(w.id) : openPlace(w)) },
     h("span", { class: "st" }, ic),
     h("span", { class: "t" }, h("span", { class: "wt" }, w.title), sub ? h("span", { class: "tiny wsub" }, sub) : null),
     right ? h("span", { class: "wr" }, right) : null);
@@ -1247,7 +1282,10 @@ function drawWish(id) {
   const w = wishById(id);
   if (!w) return h("p", { class: "empty" }, "지워진 항목이에요");
   const movie = w.kind === "movie", verb = movie ? "같이 봤어요" : "다녀왔어요", pc = PCAT[w.place_cat] || PCAT.etc;
-  const out = [h("span", { class: "chip sky", style: { alignSelf: "flex-start" } }, movie ? "🎬 같이 볼 영화" : `${pc.ic} ${pc.name}`)];
+  const parent = w.parent_id && wishById(w.parent_id);
+  const out = [h("div", { class: "row", style: { flexWrap: "wrap", gap: "6px" } },
+    h("span", { class: "chip sky" }, movie ? "🎬 같이 볼 영화" : `${pc.ic} ${pc.name}`),
+    parent ? h("span", { class: "chip gray" }, `📍 ${parent.title}에서 갈 곳`) : null)];
   if (S.wishEdit) out.push(wishEditForm(w));
   else {
     out.push(h("div", { class: "q-big" }, w.title));
@@ -1307,9 +1345,14 @@ async function setDone(w, day) {
   if (day) toast("옮겼어요 · 이제 별점을 남겨 보세요");
 }
 async function delWish(w) {
-  if (!confirm(`‘${w.title}’ ${w.kind === "movie" ? "영화" : "장소"}를 목록에서 지울까요?\n남긴 별점도 같이 지워져요.`)) return;
+  const kids = kidsOf(w.id);
+  if (!confirm(`‘${w.title}’ ${w.kind === "movie" ? "영화" : "장소"}를 목록에서 지울까요?\n`
+    + `${kids.length ? `안에 추가한 곳 ${kids.length}개와 ` : ""}남긴 별점도 같이 지워져요.`)) return;
   try { await S.api.deleteWish(w.id); } catch (err) { return toast(errMsg(err)); }
-  S.wishes = S.wishes.filter((x) => x.id !== w.id); delete S.reviews[w.id];
+  const gone = new Set([w.id, ...kids.map((k) => k.id)]);      // 서버에서는 안에 넣은 곳도 같이 지워진다
+  S.wishes = S.wishes.filter((x) => !gone.has(x.id));
+  for (const id of gone) delete S.reviews[id];
+  if (gone.has(S.mapPlace)) S.mapPlace = null;
   closeSheet(); renderTab(); toast("지웠어요");
 }
 
@@ -1398,7 +1441,8 @@ function addMovieForm() {
 
 /* ---------------- 지도 (카카오맵) ---------------- */
 // 지도는 한 번 만들어 두고, 탭을 다시 그릴 때마다 같은 지도를 다시 붙인다 (보던 위치·확대가 유지된다)
-const MAP = { box: null, el: null, msg: null, map: null, pins: [], temp: null, loading: null, fitted: false, cur: [] };
+// viewKey: 지금 지도가 보여주는 화면 ("main" = 전체, 아니면 들어가 있는 장소 id). mainView: 장소에 들어가기 전 전체 지도 위치
+const MAP = { box: null, el: null, msg: null, map: null, pins: [], temp: null, loading: null, cur: [], viewKey: null, mainView: null };
 function loadKakao() {
   if (window.kakao && window.kakao.maps && window.kakao.maps.services) return Promise.resolve();
   if (!MAP.loading) MAP.loading = new Promise((res, rej) => {
@@ -1424,16 +1468,32 @@ function mapBox() {
   return MAP.box;
 }
 const hasPos = (w) => w.lat != null && w.lng != null;
+// 장소 목록에서 누르면: 큰 장소는 그 안으로 들어가고, 안에 넣은 곳은 그 장소 화면에서 상세 창을 연다
+function openPlace(w) {
+  if (w.parent_id) { if (S.mapPlace !== w.parent_id) enterPlace(w.parent_id); openWish(w.id); }
+  else if (S.tab === "map") enterPlace(w.id);
+  else openWish(w.id);
+}
+function enterPlace(id) {
+  S.mapPlace = id; S.mapResults = null; S.drafts["near-q"] = ""; clearTemp();
+  renderTab(); window.scrollTo(0, 0);
+}
+function leavePlace() { S.mapPlace = null; S.mapResults = null; clearTemp(); renderTab(); window.scrollTo(0, 0); }
+const mapKeyBanner = () => h("div", { class: "banner" }, "지도를 띄우려면 카카오맵 키가 필요해요. config.js의 kakaoMapKey에 넣어 주세요 (README ‘지도 설정’)");
+
 function renderMap() {
-  const all = S.wishes.filter((w) => w.kind === "place");
+  if (S.mapPlace && !wishById(S.mapPlace)) S.mapPlace = null;      // 그사이 지워졌다
+  if (S.mapPlace) return renderPlace(wishById(S.mapPlace));
+  const all = S.wishes.filter((w) => w.kind === "place" && !w.parent_id);
   const todo = all.filter((w) => !w.done_on), done = all.filter((w) => w.done_on);
   const showDone = S.wishTab.place === "done", shown = sortWishes(showDone ? done : todo, showDone);
   const note = wishNote(), key = !!CFG.kakaoMapKey;
-  const parts = [h("div", { class: "title" }, "지도"), h("p", { class: "sub", style: { marginTop: "-8px" } }, "같이 가 보고 싶은 곳을 찾아서 핀을 꽂아 둬요")];
+  const parts = [h("div", { class: "title" }, "지도"),
+    h("p", { class: "sub", style: { marginTop: "-8px" } }, "같이 가 보고 싶은 곳을 찾아서 핀을 꽂아 둬요. 핀을 누르면 그 안에 갈 카페·밥집을 모을 수 있어요")];
   if (note) parts.push(note);
-  else if (!key) parts.push(h("div", { class: "banner" }, "지도를 띄우려면 카카오맵 키가 필요해요. config.js의 kakaoMapKey에 넣어 주세요 (README ‘지도 설정’)"));
+  else if (!key) parts.push(mapKeyBanner());
   else {
-    parts.push(placeSearchForm());
+    parts.push(placeSearchForm("map-q", "장소 검색 (예: 북촌, 성수 카페, 해운대)", (q) => searchPlaces(q, null)));
     if (S.mapResults) parts.push(resultsEl());
     parts.push(mapBox());
   }
@@ -1441,10 +1501,48 @@ function renderMap() {
     shown.length ? h("div", { class: "qlist" }, shown.map(wishItem))
       : h("p", { class: "empty" }, showDone ? "같이 다녀온 곳이 여기에 쌓여요" : key && !note ? "위에서 장소를 검색해 저장해 보세요" : "아직 저장한 곳이 없어요"));
   view(...parts);
-  if (key && !note) mountMap(shown);
+  if (key && !note) mountMap(shown.map((w) => ({ w, cls: w.done_on ? "done" : "", onclick: () => enterPlace(w.id) })), "main");
 }
-function mountMap(places) {
-  MAP.cur = places;
+// 장소 안: 그 근처에서 갈 카페·밥집 등을 찾아 넣고, 분류별로 모아 본다
+function renderPlace(p) {
+  const kids = kidsOf(p.id), pc = PCAT[p.place_cat] || PCAT.etc;
+  const note = wishNote(), key = !!CFG.kakaoMapKey;
+  const parts = [
+    h("div", { class: "row" }, h("button", { class: "navbtn", "aria-label": "뒤로", onclick: leavePlace }, "‹"),
+      h("div", { class: "title grow" }, p.title)),
+    h("div", { class: "card", style: col(8) },
+      h("div", { class: "row", style: { flexWrap: "wrap", gap: "6px" } },
+        h("span", { class: "chip sky" }, `${pc.ic} ${pc.name}`),
+        p.done_on ? h("span", { class: "chip mint" }, `✅ ${fmtShort(p.done_on)} 다녀옴`) : null,
+        h("span", { class: "grow" }),
+        h("button", { class: "link", onclick: () => openWish(p.id) }, "메모·별점 ›")),
+      p.address ? h("div", { class: "sub" }, p.address) : null,
+      p.memo ? h("div", { class: "memo-t" }, p.memo) : null),
+  ];
+  if (note) parts.push(note);
+  else if (!key) parts.push(mapKeyBanner());
+  else {
+    parts.push(placeSearchForm("near-q", "이 근처에서 찾기 (예: 칼국수, 카페)", (q) => searchPlaces(q, p)),
+      h("div", { class: "pcats" }, NEAR_QUICK.map(([label, q]) =>
+        h("button", { type: "button", onclick: () => { S.drafts["near-q"] = q; searchPlaces(q, p); } }, label))));
+    if (S.mapResults) parts.push(resultsEl());
+    parts.push(mapBox());
+  }
+  parts.push(h("div", { class: "h2", style: { marginTop: "6px" } }, `여기서 갈 곳 ${kids.length ? kids.length : ""}`));
+  if (!kids.length) parts.push(h("p", { class: "empty" }, key && !note ? "위에서 근처 카페·밥집을 찾아 추가해 보세요" : "아직 추가한 곳이 없어요"));
+  for (const [c, info] of Object.entries(PCAT)) {
+    const g = kids.filter((k) => (PCAT[k.place_cat] ? k.place_cat : "etc") === c);
+    if (g.length) parts.push(h("div", { class: "sec" }, `${info.ic} ${info.name} ${g.length}`), h("div", { class: "qlist" }, g.map(wishItem)));
+  }
+  view(...parts);
+  if (key && !note) mountMap([
+    { w: p, cls: "main" + (p.done_on ? " done" : ""), onclick: () => openWish(p.id), z: 2 },
+    ...kids.map((k) => ({ w: k, cls: "sm" + (k.done_on ? " done" : ""), onclick: () => openWish(k.id), z: 1 })),
+  ], p.id);
+}
+// pins: [{w, cls, onclick, z}]. key가 바뀌면(전체 ↔ 장소 안) 그 화면에 맞게 지도를 옮긴다
+function mountMap(pins, key) {
+  MAP.cur = pins.map((p) => p.w);
   loadKakao().then(() => {
     if (S.tab !== "map" || !MAP.box.isConnected) return;
     const K = window.kakao.maps;
@@ -1454,11 +1552,17 @@ function mountMap(places) {
     } else {
       const c = MAP.map.getCenter(); MAP.map.relayout(); MAP.map.setCenter(c);   // 다시 붙였으니 크기를 다시 잰다
     }
-    drawPins(places);
-    const f = S.mapFocus && places.find((w) => w.id === S.mapFocus);
+    drawPins(pins);
+    const f = S.mapFocus && MAP.cur.find((w) => w.id === S.mapFocus);
     S.mapFocus = null;
-    if (f) focusPlace(f);
-    else if (!MAP.fitted) fitPins(places);
+    if (MAP.viewKey !== key) {
+      if (MAP.viewKey === "main") MAP.mainView = { c: MAP.map.getCenter(), l: MAP.map.getLevel() };
+      const back = key === "main" && MAP.mainView;
+      MAP.viewKey = key;
+      if (f) focusPlace(f);
+      else if (back) { MAP.map.setLevel(back.l); MAP.map.setCenter(back.c); }
+      else fitPins(MAP.cur);
+    } else if (f) focusPlace(f);
   }).catch((e) => {
     console.warn(e);
     MAP.msg.textContent = "카카오맵을 불러오지 못했어요. 인터넷 연결이나, 카카오 개발자 사이트의 키·사이트 도메인 등록을 확인해 주세요";
@@ -1468,12 +1572,12 @@ function mountMap(places) {
 function pinEl(cls, ic, label, onclick) {
   return h("button", { class: "pin " + cls, "aria-label": label, title: label, onclick }, h("span", {}, ic));
 }
-function drawPins(places) {
+function drawPins(pins) {
   const K = window.kakao.maps;
   for (const o of MAP.pins) o.setMap(null);
-  MAP.pins = places.filter(hasPos).map((w) => {
-    const o = new K.CustomOverlay({ position: new K.LatLng(w.lat, w.lng), yAnchor: 1.2, clickable: true,
-      content: pinEl(w.done_on ? "done" : "", (PCAT[w.place_cat] || PCAT.etc).ic, w.title, () => openWish(w.id)) });
+  MAP.pins = pins.filter((p) => hasPos(p.w)).map((p) => {
+    const o = new K.CustomOverlay({ position: new K.LatLng(p.w.lat, p.w.lng), yAnchor: 1.2, clickable: true, zIndex: p.z || 0,
+      content: pinEl(p.cls, (PCAT[p.w.place_cat] || PCAT.etc).ic, p.w.title, p.onclick) });
     o.setMap(MAP.map);
     return o;
   });
@@ -1482,8 +1586,7 @@ function fitPins(places, always) {
   if (!MAP.map) return;
   const K = window.kakao.maps, pts = places.filter(hasPos);
   if (!pts.length) { if (always) toast("지도에 표시할 곳이 없어요"); return; }
-  MAP.fitted = true;
-  if (pts.length === 1) { MAP.map.setLevel(5); MAP.map.setCenter(new K.LatLng(pts[0].lat, pts[0].lng)); return; }
+  if (pts.length === 1) { MAP.map.setLevel(4); MAP.map.setCenter(new K.LatLng(pts[0].lat, pts[0].lng)); return; }
   const b = new K.LatLngBounds();
   for (const w of pts) b.extend(new K.LatLng(w.lat, w.lng));
   MAP.map.setBounds(b, 40, 40, 40, 40);
@@ -1504,9 +1607,8 @@ function showTemp(lat, lng, label) {
 }
 function clearTemp() { if (MAP.temp) { MAP.temp.setMap(null); MAP.temp = null; } }
 
-function placeSearchForm() {
-  const k = "map-q";
-  const inp = h("input", { class: "input grow", type: "search", placeholder: "장소 검색 (예: 성수 카페, 해운대)", "data-k": k,
+function placeSearchForm(k, placeholder, onSearch) {
+  const inp = h("input", { class: "input grow", type: "search", placeholder, "data-k": k,
     enterkeyhint: "search", oninput: () => { S.drafts[k] = inp.value; } });
   inp.value = S.drafts[k] || "";
   return h("form", { class: "row", onsubmit: (e) => {
@@ -1514,21 +1616,26 @@ function placeSearchForm() {
     const q = inp.value.trim();
     if (!q) return toast("찾을 장소를 적어 주세요");
     inp.blur();          // 폰 키보드를 내려서 결과가 보이게
-    searchPlaces(q);
+    onSearch(q);
   } }, inp, h("button", { class: "btn", type: "submit" }, "검색"));
 }
-async function searchPlaces(q) {
-  S.mapResults = { q, loading: true, list: [] };
+// near가 있으면 그 장소 2km 안에서 가까운 순으로 찾는다
+async function searchPlaces(q, near) {
+  const nearId = near ? near.id : null;
+  S.mapResults = { q, loading: true, list: [], near: nearId };
   renderTab();
   try { await loadKakao(); } catch (e) { S.mapResults = null; renderTab(); return toast("카카오맵을 불러오지 못했어요"); }
-  const St = window.kakao.maps.services.Status;
-  new window.kakao.maps.services.Places().keywordSearch(q, (data, status) => {
-    if (!S.mapResults || S.mapResults.q !== q) return;         // 그사이 다른 걸 검색했다
+  const sv = window.kakao.maps.services, St = sv.Status;
+  const opt = near && hasPos(near)
+    ? { location: new window.kakao.maps.LatLng(near.lat, near.lng), radius: 2000, sort: sv.SortBy.DISTANCE } : undefined;
+  new sv.Places().keywordSearch(q, (data, status) => {
+    if (!S.mapResults || S.mapResults.q !== q || S.mapResults.near !== nearId) return;   // 그사이 다른 걸 검색했다
     if (status === St.ERROR) { S.mapResults = null; toast("검색하지 못했어요. 잠시 후 다시 해 주세요"); }
-    else S.mapResults = { q, loading: false, list: status === St.OK ? data.slice(0, 15) : [] };
+    else S.mapResults = { q, loading: false, list: status === St.OK ? data.slice(0, 15) : [], near: nearId };
     if (S.tab === "map") renderTab();
-  });
+  }, opt);
 }
+const fmtDist = (m) => { m = Number(m); return !m && m !== 0 ? "" : m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${m}m`; };
 const sameSpot = (w, r) => w.kind === "place" && ((w.place_url && w.place_url === r.place_url)
   || (w.title === r.place_name && hasPos(w) && Math.abs(w.lat - Number(r.y)) < 1e-4 && Math.abs(w.lng - Number(r.x)) < 1e-4));
 function resultsEl() {
@@ -1538,19 +1645,23 @@ function resultsEl() {
     h("button", { class: "link", onclick: () => { S.mapResults = null; clearTemp(); renderTab(); } }, "닫기"));
   if (R.loading) return h("div", { class: "results" }, head);
   if (!R.list.length) return h("div", { class: "results" }, head, h("p", { class: "empty" }, "검색 결과가 없어요. 다른 이름으로 찾아보세요"));
+  const near = R.near && wishById(R.near);
   return h("div", { class: "results" }, head, h("div", { class: "res-list" }, R.list.map((r) => {
     const saved = S.wishes.find((w) => sameSpot(w, r));
-    return h("button", { class: "res-it", onclick: () => (saved ? openWish(saved.id) : openNewPlace(r)) },
-      h("span", { class: "t" }, h("span", { class: "wt" }, r.place_name), h("span", { class: "tiny wsub" }, r.road_address_name || r.address_name)),
-      h("span", { class: "chip" + (saved ? " mint" : " gray") }, saved ? "저장됨" : (r.category_group_name || "장소")));
+    const where = [r.distance ? fmtDist(r.distance) : "", r.road_address_name || r.address_name].filter(Boolean).join(" · ");
+    const kind = r.category_name ? r.category_name.split(" > ").pop() : (r.category_group_name || "장소");
+    return h("button", { class: "res-it", onclick: () => (saved ? openPlace(saved) : openNewPlace(r, near)) },
+      h("span", { class: "t" }, h("span", { class: "wt" }, r.place_name), h("span", { class: "tiny wsub" }, where)),
+      h("span", { class: "chip" + (saved ? " mint" : " gray") }, saved ? "저장됨" : kind));
   })));
 }
-function openNewPlace(r) {
-  const F = { cat: KCAT[r.category_group_code] || "etc", memo: "", busy: false };
+// parent가 있으면 그 장소 안에 넣는다 (예: 북촌 한옥마을 → 근처 카페)
+function openNewPlace(r, parent) {
+  const F = { cat: guessCat(r), memo: "", busy: false };
   showTemp(Number(r.y), Number(r.x), r.place_name);
-  openSheet(() => drawNewPlace(r, F), { onClose: clearTemp });
+  openSheet(() => drawNewPlace(r, F, parent), { onClose: clearTemp });
 }
-function drawNewPlace(r, F) {
+function drawNewPlace(r, F, parent) {
   const memo = h("textarea", { class: "textarea", maxlength: 500, style: { minHeight: "80px" },
     placeholder: "여기서 뭐 하고 싶어? (선택)", oninput: () => { F.memo = memo.value; } });
   memo.value = F.memo;
@@ -1560,23 +1671,28 @@ function drawNewPlace(r, F) {
     let w;
     try {
       w = await S.api.addWish({ kind: "place", title: r.place_name, memo: F.memo.trim(), lat: Number(r.y), lng: Number(r.x),
-        address: r.road_address_name || r.address_name || null, place_url: r.place_url || null, place_cat: F.cat, done_on: done ? today() : null });
+        address: r.road_address_name || r.address_name || null, place_url: r.place_url || null, place_cat: F.cat, done_on: done ? today() : null,
+        ...(parent ? { parent_id: parent.id } : {}) });    // 큰 장소는 parent_id를 아예 안 보낸다 (칸이 없는 옛 DB에서도 저장되게)
     } catch (err) { F.busy = false; return toast(errMsg(err)); }
-    S.wishes.push(w); S.wishTab.place = done ? "done" : "todo"; S.mapResults = null; S.mapFocus = w.id;
+    S.wishes.push(w); S.mapResults = null; S.mapFocus = w.id;
+    if (!parent) S.wishTab.place = done ? "done" : "todo";
     closeSheet(); renderTab();
-    toast(done ? "다녀온 곳에 저장했어요 · 별점을 남겨 보세요" : "가고 싶은 곳에 저장했어요 📍");
+    toast(parent ? `${parent.title}에 추가했어요 📍`
+      : done ? "다녀온 곳에 저장했어요 · 별점을 남겨 보세요" : "가고 싶은 곳에 저장했어요 📍");
   };
   const addr = r.road_address_name || r.address_name;
   return [
-    h("span", { class: "chip sky", style: { alignSelf: "flex-start" } }, r.category_name ? r.category_name.split(" > ").pop() : "장소"),
+    h("div", { class: "row", style: { flexWrap: "wrap", gap: "6px" } },
+      h("span", { class: "chip sky" }, r.category_name ? r.category_name.split(" > ").pop() : "장소"),
+      parent ? h("span", { class: "chip gray" }, `📍 ${parent.title} 근처${r.distance ? " " + fmtDist(r.distance) : ""}`) : null),
     h("div", { class: "q-big" }, r.place_name),
     addr ? h("div", { class: "sub", style: { marginTop: "-8px" } }, addr) : null,
     r.place_url ? h("a", { class: "link", href: r.place_url, target: "_blank", rel: "noopener" }, "카카오맵에서 자세히 보기") : null,
     h("div", { class: "sec" }, "분류"),
     pcatPicker(F.cat, (k) => { F.cat = k; }),
     memo,
-    h("button", { class: "btn wide", onclick: () => add(false) }, "📍 가고 싶은 곳에 저장"),
-    h("button", { class: "btn wide line", onclick: () => add(true) }, "✅ 이미 다녀온 곳이에요"),
+    h("button", { class: "btn wide", onclick: () => add(false) }, parent ? `📍 ${parent.title}에 추가` : "📍 가고 싶은 곳에 저장"),
+    h("button", { class: "btn wide line", onclick: () => add(true) }, parent ? "✅ 이미 가 본 곳이에요" : "✅ 이미 다녀온 곳이에요"),
   ];
 }
 

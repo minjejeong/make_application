@@ -89,10 +89,14 @@ create table if not exists public.wishes (
   lng        double precision,
   address    text,
   place_url  text,                          -- 카카오맵 장소 페이지
-  place_cat  text,                          -- food · cafe · play · trip · etc
+  place_cat  text,                          -- food · cafe · dessert · bar · play · trip · etc
+  parent_id  uuid references public.wishes(id) on delete cascade,   -- 어느 장소 안에서 갈 곳인지 (예: 북촌 한옥마을 → 그 근처 카페)
   created_at timestamptz not null default now()
 );
+-- 장소 안에 갈 곳을 넣는 칸 (이 칸이 생기기 전에 만든 테이블에도 추가)
+alter table public.wishes add column if not exists parent_id uuid references public.wishes(id) on delete cascade;
 create index if not exists wishes_couple on public.wishes(couple_id);
+create index if not exists wishes_parent on public.wishes(parent_id);
 
 -- 같이 본 영화 · 다녀온 곳의 별점 (한 사람당 하나)
 create table if not exists public.wish_reviews (
@@ -186,7 +190,9 @@ drop policy if exists wishes_select on public.wishes;
 create policy wishes_select on public.wishes for select to authenticated using (public.is_member(couple_id));
 drop policy if exists wishes_insert on public.wishes;
 create policy wishes_insert on public.wishes for insert to authenticated
-  with check (public.is_member(couple_id) and added_by = auth.uid());
+  with check (public.is_member(couple_id) and added_by = auth.uid()
+              and (parent_id is null
+                   or exists (select 1 from public.wishes p where p.id = wishes.parent_id and p.couple_id = wishes.couple_id)));
 drop policy if exists wishes_update on public.wishes;
 create policy wishes_update on public.wishes for update to authenticated
   using (public.is_member(couple_id)) with check (public.is_member(couple_id));

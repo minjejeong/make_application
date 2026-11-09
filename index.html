@@ -234,6 +234,11 @@ a.btn{text-decoration:none}
 .pin span{display:block;transform:rotate(45deg);font-size:16px;line-height:1}
 .pin.done{border-color:var(--mint);background:var(--mint-soft)}
 .pin.temp{border-color:var(--sky);background:var(--sky-soft);cursor:default}
+.pin.sm{width:28px;height:28px;border-width:2px}            /* 장소 안에 넣은 곳 */
+.pin.sm span{font-size:13px}
+.pin.main{width:42px;height:42px;border-width:3px;border-color:var(--pink-ink);background:#FFF0F3}   /* 들어가 있는 장소 */
+.pin.main.done{border-color:#2E8F74;background:var(--mint-soft)}
+.pin.main span{font-size:20px}
 .results{background:var(--card);border-radius:18px;box-shadow:var(--sh);padding:12px 12px 4px;display:flex;flex-direction:column;gap:6px}
 .res-list{display:flex;flex-direction:column;max-height:300px;overflow-y:auto;overscroll-behavior:contain}
 .res-it{display:flex;align-items:center;gap:10px;text-align:left;padding:10px 4px;border-top:1px solid var(--line);width:100%}
