@@ -46,6 +46,7 @@ const ICON = {
   cal:  '<svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
   q:    '<svg viewBox="0 0 24 24"><path d="M20.5 11.5c0 4.1-3.8 7.4-8.5 7.4-1.3 0-2.5-.2-3.6-.7L4 20l1.3-3.7A6.9 6.9 0 0 1 3.5 11.5C3.5 7.4 7.3 4 12 4s8.5 3.4 8.5 7.5z"/></svg>',
   bal:  '<svg viewBox="0 0 24 24"><path d="M12 4v16M7.5 20h9M5 7.5h14M5 7.5 2.5 14a2.6 2.6 0 0 0 5 0zM19 7.5 16.5 14a2.6 2.6 0 0 0 5 0z"/></svg>',
+  map:  '<svg viewBox="0 0 24 24"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></svg>',
   us:   '<svg viewBox="0 0 24 24"><path d="M12 20s-7.5-4.6-7.5-10.1A4.3 4.3 0 0 1 12 7.6a4.3 4.3 0 0 1 7.5 2.3C19.5 15.4 12 20 12 20z"/></svg>',
 };
 function icon(name) { const s = document.createElement("span"); s.innerHTML = ICON[name]; return s.firstChild; }
@@ -107,6 +108,11 @@ const OBJ = Object.fromEntries(DATA.objects.map((o) => [o.key, o]));
 const WALL = Object.fromEntries(DATA.walls.map((w) => [w.key, w]));
 const FLOOR = Object.fromEntries(DATA.floors.map((f) => [f.key, f]));
 
+// 지도에 저장하는 장소 분류. KCAT은 카카오 장소 분류 코드 → 우리 분류 (저장할 때 처음 골라 두는 값)
+const PCAT = { food: { ic: "🍽️", name: "맛집" }, cafe: { ic: "☕", name: "카페" }, play: { ic: "🎡", name: "놀거리" },
+               trip: { ic: "🧳", name: "여행" }, etc: { ic: "📍", name: "기타" } };
+const KCAT = { FD6: "food", CE7: "cafe", AT4: "play", CT1: "play", AD5: "trip" };
+
 // 오늘의 질문: 카테고리를 번갈아 섞은 커플 고유 순서에서, 커플 만든 날부터 하루에 하나씩
 function questionOrder(couple) {
   return memo("qo:" + couple.id, () => {
@@ -148,6 +154,16 @@ const S = {
   dragging: false,
   shopTab: "shop",
   dayForm: null,
+  wishes: [],        // wishes 행 (영화 · 장소)
+  reviews: {},       // wish_id -> {user_id: {stars, review, created_at}}
+  wishesErr: null,   // 목록을 못 불러왔을 때 보여줄 말 (setup.sql을 다시 안 돌렸으면 테이블이 없다)
+  wishTab: { movie: "todo", place: "todo" },
+  wishEdit: false,   // 목록 시트에서 제목·메모 고치는 중
+  revEdit: false,    // 내 별점 고치는 중
+  revDraft: null,    // 쓰는 중인 별점 {stars, text}
+  mapResults: null,  // 장소 검색 결과 {q, loading, list}
+  mapFocus: null,    // 지도를 다시 그릴 때 가운데로 옮길 장소 id
+  drafts: {},        // 화면이 다시 그려져도 남겨 둘 입력값 (data-k별)
 };
 const me = () => S.user && S.user.id;
 const partner = () => S.members.find((m) => m.user_id !== me());
@@ -161,6 +177,9 @@ const pickOf = (id, uid) => uid && S.picks[id] && S.picks[id][uid] && S.picks[id
 const bothAnswered = (qid) => !!(ansOf(qid, me()) && ansOf(qid, pid()));
 const waitingQs = () => Q.filter((q) => ansOf(q.id, pid()) && !ansOf(q.id, me()));
 const waitingPicks = () => BAL.filter((b) => pickOf(b.id, pid()) && !pickOf(b.id, me()));
+const revOf = (wid, uid) => uid && S.reviews[wid] && S.reviews[wid][uid];
+// 같이 했는데 상대만 별점을 남긴 것 (내가 남기면 열린다)
+const waitingRevs = (kind) => S.wishes.filter((w) => w.kind === kind && w.done_on && revOf(w.id, pid()) && !revOf(w.id, me()));
 
 function priceOf(key) {
   if (key.startsWith("wall:")) return (WALL[key.slice(5)] || {}).price || 0;
@@ -292,6 +311,15 @@ function SupaApi() {
       return ok(await sb.from("room_items").insert({ couple_id: cid(), object_key, ...extra }).select().single());
     },
     async updateItem(id, patch) { ok(await sb.from("room_items").update(patch).eq("id", id)); },
+    async loadWishes() { return ok(await sb.from("wishes").select("*").eq("couple_id", cid()).order("created_at")); },
+    async loadReviews() { return ok(await sb.from("wish_reviews").select("wish_id,user_id,stars,review,created_at").eq("couple_id", cid())); },
+    async addWish(row) { return ok(await sb.from("wishes").insert({ couple_id: cid(), ...row }).select().single()); },
+    async updateWish(id, patch) { ok(await sb.from("wishes").update(patch).eq("id", id)); },
+    async deleteWish(id) { ok(await sb.from("wishes").delete().eq("id", id)); },
+    async saveReview(wish_id, stars, review) {
+      ok(await sb.from("wish_reviews").upsert({ wish_id, couple_id: cid(), user_id: uid(), stars, review },
+        { onConflict: "wish_id,user_id" }));
+    },
     async urls(paths) {
       const r = ok(await sb.storage.from("photos").createSignedUrls(paths, 6 * 3600));
       const out = {};
@@ -301,11 +329,13 @@ function SupaApi() {
     subscribe(onChange) {
       const id = cid();
       const ch = sb.channel("duriseo-" + id);
-      for (const t of ["answers", "balance_picks", "room_items", "entries", "couple_members"])
+      // 목록 테이블이 아직 없으면(setup.sql을 다시 안 돌렸으면) 구독에서 뺀다 — 없는 테이블이 끼면 채널 전체가 실패한다
+      const wishT = S.wishesErr ? [] : ["wishes", "wish_reviews"];
+      for (const t of ["answers", "balance_picks", "room_items", "entries", "couple_members", ...wishT])
         ch.on("postgres_changes", { event: "*", schema: "public", table: t, filter: `couple_id=eq.${id}` }, () => onChange(t));
       ch.on("postgres_changes", { event: "*", schema: "public", table: "couples", filter: `id=eq.${id}` }, () => onChange("couples"));
       // 필터를 건 구독에는 삭제가 오지 않으므로, 삭제는 따로 받는다 (지워진 행의 id만 온다)
-      for (const t of ["entries", "room_items", "couple_members"])
+      for (const t of ["entries", "room_items", "couple_members", ...wishT])
         ch.on("postgres_changes", { event: "DELETE", schema: "public", table: t }, () => onChange(t));
       ch.subscribe();
       return () => sb.removeChannel(ch);
@@ -353,7 +383,28 @@ function DemoApi() {
     D.entries.push(e1);
     D.entries.push({ id: uuid(), couple_id: couple.id, user_id: ME, day: addDays(today(), -5),
                      memo: "비 와서 집에서 영화 본 날. 팝콘 다 쏟은 건 비밀 🍿", photo_path: null, thumb_path: null, created_at: now });
+    seedWishes();
     save();
+  }
+  // 영화 · 장소 예시 (목록 기능이 생기기 전에 만든 데모에도 채워 넣는다)
+  function seedWishes() {
+    const now = stamp();
+    D.wishes = []; D.reviews = [];
+    const add = (kind, title, extra) => {
+      const w = { id: uuid(), couple_id: D.couple.id, kind, title, memo: "", added_by: ME, done_on: null,
+                  lat: null, lng: null, address: null, place_url: null, place_cat: null, created_at: now, ...extra };
+      D.wishes.push(w); return w;
+    };
+    const rev = (w, who, stars, review) => D.reviews.push({ wish_id: w.id, couple_id: D.couple.id, user_id: who, stars, review, created_at: now });
+    add("movie", "인사이드 아웃 2", { added_by: YOU, memo: "팝콘은 큰 걸로! 🍿" });
+    add("movie", "듄: 파트 2", { memo: "이건 꼭 큰 화면으로 보자" });
+    rev(add("movie", "어바웃 타임", { added_by: YOU, done_on: addDays(today(), -12), memo: "비 오는 날 집에서" }), YOU, 5, "세 번째 보는데도 울었어…");
+    add("place", "서울숲", { added_by: YOU, memo: "날 좋을 때 돗자리 들고 피크닉!", lat: 37.5444, lng: 127.0374, address: "서울 성동구 뚝섬로 273", place_cat: "play" });
+    add("place", "북촌 한옥마을", { memo: "한복 입고 사진 찍기", lat: 37.5826, lng: 126.9850, address: "서울 종로구 계동", place_cat: "trip" });
+    const tower = add("place", "N서울타워", { added_by: YOU, done_on: addDays(today(), -30), memo: "자물쇠 걸기", lat: 37.5512, lng: 126.9882,
+                                               address: "서울 용산구 남산공원길 105", place_cat: "play" });
+    rev(tower, ME, 4, "야경 최고. 바람은 너무 불었다");
+    rev(tower, YOU, 5, "우리 자물쇠 아직 있을까?");
   }
   function demoPhoto() {
     try {
@@ -371,7 +422,11 @@ function DemoApi() {
 
   return {
     kind: "demo",
-    async session() { if (!D) await seed(); return { id: D.as, email: D.as === ME ? "하늘@데모" : "바다@데모" }; },
+    async session() {
+      if (!D) await seed();
+      if (!D.wishes) { seedWishes(); save(); }
+      return { id: D.as, email: D.as === ME ? "하늘@데모" : "바다@데모" };
+    },
     async signOut() {},
     async loadCouple() { return { couple: copy(D.couple), members: copy(D.members) }; },
     async leaveCouple() { localStorage.removeItem(KEY); D = null; },
@@ -411,6 +466,20 @@ function DemoApi() {
       D.room.push(it); save(); return copy(it);
     },
     async updateItem(id, patch) { const it = D.room.find((r) => r.id === id); if (it) Object.assign(it, patch); save(); },
+    async loadWishes() { return copy(D.wishes || []); },
+    async loadReviews() { return copy(D.reviews || []); },
+    async addWish(row) {
+      const w = { id: uuid(), couple_id: D.couple.id, added_by: uid(), memo: "", done_on: null, lat: null, lng: null,
+                  address: null, place_url: null, place_cat: null, created_at: stamp(), ...row };
+      D.wishes.push(w); save(); return copy(w);
+    },
+    async updateWish(id, patch) { const w = D.wishes.find((x) => x.id === id); if (w) Object.assign(w, patch); save(); },
+    async deleteWish(id) { D.wishes = D.wishes.filter((x) => x.id !== id); D.reviews = D.reviews.filter((r) => r.wish_id !== id); save(); },
+    async saveReview(wish_id, stars, review) {
+      const r = D.reviews.find((x) => x.wish_id === wish_id && x.user_id === uid());
+      if (r) Object.assign(r, { stars, review }); else D.reviews.push({ wish_id, couple_id: D.couple.id, user_id: uid(), stars, review, created_at: stamp() });
+      save();
+    },
     async urls(paths) { const out = {}; for (const p of paths) if (D.photos[p]) out[p] = D.photos[p]; return out; },
     subscribe() { return () => {}; },
     switchUser() { D.as = D.as === ME ? YOU : ME; save(); },
@@ -437,9 +506,25 @@ async function loadMonth(ym, force) {
   const need = rows.map((r) => r.thumb_path).filter((p) => p && !S.urls[p]);
   if (need.length) Object.assign(S.urls, await S.api.urls(need));
 }
+function setReviews(rows) {
+  S.reviews = {};
+  for (const r of rows) (S.reviews[r.wish_id] || (S.reviews[r.wish_id] = {}))[r.user_id] = { stars: r.stars, review: r.review, created_at: r.created_at };
+}
+// 영화 · 장소 목록. 실패해도 앱의 나머지는 그대로 쓰게 던지지 않는다
+async function loadWishData() {
+  try {
+    const [w, r] = await Promise.all([S.api.loadWishes(), S.api.loadReviews()]);
+    S.wishes = w; setReviews(r); S.wishesErr = null;
+  } catch (e) {
+    console.warn(e);
+    S.wishes = []; S.reviews = {};
+    S.wishesErr = /schema cache|does not exist|Could not find the/i.test(String((e && e.message) || e))
+      ? "이 기능을 쓰려면 Supabase SQL Editor에서 setup.sql을 한 번 더 실행해 주세요" : errMsg(e);
+  }
+}
 let urlsAt = 0;       // 사진 주소를 받은 시각. Supabase 주소는 6시간이면 만료된다
 async function loadAll() {
-  const [ans, picks, room, cnt] = await Promise.all([S.api.loadAnswers(), S.api.loadPicks(), S.api.loadRoom(), S.api.countEntries()]);
+  const [ans, picks, room, cnt] = await Promise.all([S.api.loadAnswers(), S.api.loadPicks(), S.api.loadRoom(), S.api.countEntries(), loadWishData()]);
   setAnswers(ans); setPicks(picks); S.room = room; S.entryCount = cnt;
   S.entries = {}; S.urls = {}; urlsAt = Date.now();
   await loadMonth(S.calMonth, true);
@@ -461,6 +546,7 @@ async function flushRemote() {
     if (ts.includes("answers")) setAnswers(await S.api.loadAnswers());
     if (ts.includes("balance_picks")) setPicks(await S.api.loadPicks());
     if (ts.includes("room_items") && !S.dragging) S.room = await S.api.loadRoom();
+    if (ts.includes("wishes") || ts.includes("wish_reviews")) await loadWishData();
     if (ts.includes("entries")) {
       if (Date.now() - urlsAt > 5 * 3600e3) { S.urls = {}; urlsAt = Date.now(); }   // 만료되기 전에 새로 받는다
       S.entryCount = await S.api.countEntries();
@@ -666,7 +752,7 @@ function renderError(err) {
 /* =====================================================================
    메인 · 탭
    ===================================================================== */
-const TABS = [["home", "홈"], ["cal", "캘린더"], ["q", "질문"], ["bal", "밸런스"], ["us", "우리"]];
+const TABS = [["home", "홈"], ["cal", "캘린더"], ["q", "질문"], ["bal", "밸런스"], ["map", "지도"], ["us", "우리"]];
 function showMain() {
   $("#app").classList.remove("no-tabs");
   const nav = $("#tabs");
@@ -684,14 +770,23 @@ function go(tab) {
 }
 function renderTab() {
   if (!S.couple) return;
+  // 다시 그리는 동안 쓰던 입력칸(data-k)이 있으면, 새로 그린 같은 칸으로 커서를 돌려준다
+  const a = document.activeElement;
+  const k = a && $("#view").contains(a) && a.dataset && a.dataset.k, pos = k ? a.selectionStart : null;
   for (const b of $("#tabs .in").children) {
     b.classList.toggle("on", b.dataset.tab === S.tab);
-    const need = (b.dataset.tab === "q" && waitingQs().length > 0) || (b.dataset.tab === "bal" && waitingPicks().length > 0);
+    const t = b.dataset.tab;
+    const need = (t === "q" && (waitingQs().length > 0 || waitingRevs("movie").length > 0))
+      || (t === "bal" && waitingPicks().length > 0) || (t === "map" && waitingRevs("place").length > 0);
     const dot = b.querySelector(".dot");
     if (need && !dot) b.append(h("i", { class: "dot" }));
     if (!need && dot) dot.remove();
   }
-  ({ home: renderHome, cal: renderCal, q: renderQ, bal: renderBal, us: renderUs })[S.tab]();
+  ({ home: renderHome, cal: renderCal, q: renderQ, bal: renderBal, map: renderMap, us: renderUs })[S.tab]();
+  if (k) {
+    const n = document.querySelector(`#view [data-k="${k}"]`);
+    if (n && n !== a) { n.focus({ preventScroll: true }); try { n.setSelectionRange(pos, pos); } catch (e) { /* 무시 */ } }
+  }
 }
 
 /* ---------------- 홈 ---------------- */
@@ -997,6 +1092,7 @@ function qItem(q) {
 }
 const lastAt = (qid) => Object.values(S.answers[qid] || {}).reduce((a, x) => (x.created_at > a ? x.created_at : a), "");
 function renderQ() {
+  if (S.qCat === "movie") return renderMovies();
   if (S.qCat) return renderQCat(S.qCat);
   const both = Q.filter((q) => bothAnswered(q.id)).sort((a, b) => (lastAt(a.id) < lastAt(b.id) ? 1 : -1));
   const tq = todayQ();
@@ -1009,7 +1105,7 @@ function renderQ() {
       h("span", { class: "ic" }, c.ic), h("span", { class: "nm" }, c.name), h("span", { class: "tiny" }, c.desc),
       h("div", { class: "bar" }, h("i", { style: { width: `${Math.round(done / qs.length * 100)}%` } })),
       h("span", { class: "tiny" }, `${done} / ${qs.length}`));
-  })));
+  }), movieCard()));
   parts.push(h("div", { class: "sec" }, `우리의 대화 · ${both.length}개`),
     both.length ? h("div", { class: "qlist" }, both.slice(0, 10).map(qItem)) : h("p", { class: "empty" }, "둘 다 답한 질문이 여기에 쌓여요"));
   view(...parts);
@@ -1109,6 +1205,381 @@ async function pick(b, k) {
   toast(`♥+${H.pick}`);
 }
 
+/* ---------------- 같이 할 목록 (영화 · 장소 공용) ---------------- */
+const wishById = (id) => S.wishes.find((w) => w.id === id);
+const norm = (s) => String(s || "").replace(/\s+/g, "").toLowerCase();
+function wishNote() {
+  return S.wishesErr ? h("div", { class: "banner" }, S.wishesErr) : null;
+}
+// 목록 한 줄. 같이 한 것은 별점 상태(💞 평균 · 🔒 상대만 · ⏳ 나만)를 오른쪽에 보여준다
+function wishItem(w) {
+  const movie = w.kind === "movie", pc = PCAT[w.place_cat] || PCAT.etc;
+  const ic = movie ? (w.done_on ? "🎞️" : "🍿") : pc.ic;
+  const sub = w.done_on ? `${fmtShort(w.done_on)} ${movie ? "같이 봤어요" : "다녀왔어요"}`
+    : (w.memo || (movie ? `${josa(nick(w.added_by), "가")} 담았어요` : (w.address || "")));
+  let right = null;
+  if (w.done_on) {
+    const mine = revOf(w.id, me()), theirs = revOf(w.id, pid());
+    right = mine && theirs ? `★ ${((mine.stars + theirs.stars) / 2).toFixed(1).replace(/\.0$/, "")}`
+      : theirs ? "🔒" : mine ? "⏳" : "별점 ☆";
+  }
+  return h("button", { class: "qitem", onclick: () => openWish(w.id) },
+    h("span", { class: "st" }, ic),
+    h("span", { class: "t" }, h("span", { class: "wt" }, w.title), sub ? h("span", { class: "tiny wsub" }, sub) : null),
+    right ? h("span", { class: "wr" }, right) : null);
+}
+function wishSeg(kind, todo, done, labels) {
+  const set = (v) => { S.wishTab[kind] = v; renderTab(); };
+  return h("div", { class: "seg" },
+    segBtn(`${labels[0]} ${todo}`, S.wishTab[kind] !== "done", () => set("todo")),
+    segBtn(`${labels[1]} ${done}`, S.wishTab[kind] === "done", () => set("done")));
+}
+// 같이 한 것은 최근에 한 순, 아직 안 한 것은 최근에 담은 순
+const sortWishes = (list, done) => list.slice().sort(done ? (a, b) => (a.done_on < b.done_on ? 1 : -1) : (a, b) => (a.created_at < b.created_at ? 1 : -1));
+
+function openWish(id) {
+  S.wishEdit = false; S.revEdit = false; S.revDraft = null;
+  openSheet(() => drawWish(id), { onClose: () => { S.wishEdit = false; S.revEdit = false; S.revDraft = null; } });
+  const w = wishById(id);
+  if (w && w.kind === "place" && S.tab === "map") focusPlace(w);
+}
+function drawWish(id) {
+  const w = wishById(id);
+  if (!w) return h("p", { class: "empty" }, "지워진 항목이에요");
+  const movie = w.kind === "movie", verb = movie ? "같이 봤어요" : "다녀왔어요", pc = PCAT[w.place_cat] || PCAT.etc;
+  const out = [h("span", { class: "chip sky", style: { alignSelf: "flex-start" } }, movie ? "🎬 같이 볼 영화" : `${pc.ic} ${pc.name}`)];
+  if (S.wishEdit) out.push(wishEditForm(w));
+  else {
+    out.push(h("div", { class: "q-big" }, w.title));
+    if (!movie && w.address) out.push(h("div", { class: "sub", style: { marginTop: "-8px" } }, w.address));
+    if (w.memo) out.push(h("div", { class: "ans" }, h("span", { class: "who" }, "메모"), h("div", { class: "txt" }, w.memo)));
+    out.push(h("div", { class: "row tiny" },
+      h("span", { class: "grow" }, `${josa(nick(w.added_by), "가")} 담음 · ${fmtShort(ymd(new Date(w.created_at)))}`),
+      h("button", { class: "link", onclick: () => { S.wishEdit = true; drawSheet(); } }, movie ? "제목·메모 고치기" : "분류·메모 고치기")));
+    if (!movie && w.place_url) out.push(h("a", { class: "btn sm line", href: w.place_url, target: "_blank", rel: "noopener" }, "카카오맵에서 자세히 보기"));
+  }
+  if (!w.done_on) {
+    const d = h("input", { class: "input", type: "date", max: today(), value: today() });
+    out.push(h("div", { class: "card", style: col() },
+      h("div", { class: "sec", style: { margin: 0 } }, movie ? "같이 봤나요? 본 날을 골라 주세요" : "같이 다녀왔나요? 다녀온 날을 골라 주세요"), d,
+      h("button", { class: "btn wide", onclick: () => setDone(w, d.value || today()) }, `✅ ${verb}`)));
+  } else {
+    out.push(h("div", { class: "row" }, h("span", { class: "chip mint" }, `✅ ${fmtDate(w.done_on)}에 ${verb}`), h("span", { class: "grow" }),
+      h("button", { class: "link", onclick: () => setDone(w, null) }, "되돌리기")));
+    out.push(reviewBlock(w));
+  }
+  out.push(h("button", { class: "btn ghost", onclick: () => delWish(w) }, "목록에서 지우기"));
+  return out;
+}
+// 장소 분류 고르기. 다시 그리지 않고 버튼 표시만 바꾼다 (같은 시트의 입력칸이 지워지지 않게)
+function pcatPicker(cur, onPick) {
+  const wrap = h("div", { class: "pcats" });
+  for (const [k, c] of Object.entries(PCAT)) wrap.append(h("button", { type: "button", class: k === cur ? "on" : "", "data-c": k, onclick: () => {
+    wrap.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.c === k));
+    onPick(k);
+  } }, `${c.ic} ${c.name}`));
+  return wrap;
+}
+function wishEditForm(w) {
+  const movie = w.kind === "movie";
+  const t = h("input", { class: "input", maxlength: 100, placeholder: movie ? "영화 제목" : "장소 이름" });
+  t.value = w.title;
+  const m = h("textarea", { class: "textarea", maxlength: 500, placeholder: "메모 (선택)", style: { minHeight: "80px" } });
+  m.value = w.memo || "";
+  let cat = w.place_cat || "etc";
+  const save = h("button", { class: "btn grow", onclick: async () => {
+    const title = t.value.trim();
+    if (!title) return toast(movie ? "제목을 적어 주세요" : "이름을 적어 주세요");
+    const patch = { title, memo: m.value.trim() };
+    if (!movie) patch.place_cat = cat;
+    save.disabled = true;
+    try { await S.api.updateWish(w.id, patch); } catch (err) { save.disabled = false; return toast(errMsg(err)); }
+    Object.assign(w, patch); S.wishEdit = false;
+    drawSheet(); renderTab(); toast("고쳤어요");
+  } }, "저장");
+  return h("div", { class: "field" }, t, movie ? null : pcatPicker(cat, (k) => { cat = k; }), m,
+    h("div", { class: "row" }, h("button", { class: "btn line grow", onclick: () => { S.wishEdit = false; drawSheet(); } }, "취소"), save));
+}
+async function setDone(w, day) {
+  try { await S.api.updateWish(w.id, { done_on: day }); } catch (err) { return toast(errMsg(err)); }
+  w.done_on = day;
+  drawSheet(); renderTab();
+  if (day) toast("옮겼어요 · 이제 별점을 남겨 보세요");
+}
+async function delWish(w) {
+  if (!confirm(`‘${w.title}’ ${w.kind === "movie" ? "영화" : "장소"}를 목록에서 지울까요?\n남긴 별점도 같이 지워져요.`)) return;
+  try { await S.api.deleteWish(w.id); } catch (err) { return toast(errMsg(err)); }
+  S.wishes = S.wishes.filter((x) => x.id !== w.id); delete S.reviews[w.id];
+  closeSheet(); renderTab(); toast("지웠어요");
+}
+
+// 별점: 질문처럼 둘 다 남겨야 상대 것이 열린다
+function reviewBlock(w) {
+  const p = pid(), mine = revOf(w.id, me()), theirs = revOf(w.id, p);
+  const out = [h("div", { class: "sec" }, "우리의 별점")];
+  if (mine && !S.revEdit) out.push(revEl(me(), mine, false),
+    h("button", { class: "link", style: { alignSelf: "flex-end" }, onclick: () => { S.revEdit = true; S.revDraft = null; drawSheet(); } }, "내 별점 고치기"));
+  else out.push(reviewForm(w, mine));
+  if (!p) out.push(h("div", { class: "lock" }, "상대가 들어오면 서로의 별점을 볼 수 있어요"));
+  else if (theirs && mine) out.push(revEl(p, theirs, true));
+  else if (theirs) out.push(h("div", { class: "lock" }, `🔒 ${josa(nick(p), "가 별점을 남겼어요")}`, h("br"), "내 별점을 남기면 열려요"));
+  else out.push(h("div", { class: "lock" }, `${nick(p)}의 별점을 기다리는 중…`));
+  return out;
+}
+function revEl(uid, r, them) {
+  return h("div", { class: "ans" + (them ? " them" : "") },
+    h("span", { class: "who" }, nick(uid) + (uid === me() ? " (나)" : "")),
+    h("div", { class: "stars-v", "aria-label": `별 ${r.stars}개` }, "★".repeat(r.stars) + "☆".repeat(5 - r.stars)),
+    r.review ? h("div", { class: "txt" }, r.review) : null);
+}
+function reviewForm(w, init) {
+  const R = S.revDraft || (S.revDraft = { stars: init ? init.stars : 0, text: init ? init.review : "" });
+  const stars = h("div", { class: "stars" }, [1, 2, 3, 4, 5].map((n) =>
+    h("button", { type: "button", class: n <= R.stars ? "on" : "", "aria-label": `별 ${n}개`, onclick: () => { R.stars = n; drawSheet(); } }, "★")));
+  const ta = h("textarea", { class: "textarea", maxlength: 300, style: { minHeight: "72px" },
+    placeholder: w.kind === "movie" ? "한 줄 감상 (선택)" : "한 줄 후기 (선택)", oninput: () => { R.text = ta.value; } });
+  ta.value = R.text;
+  const btn = h("button", { class: "btn wide", onclick: async () => {
+    if (!R.stars) return toast("별을 눌러 점수를 골라 주세요");
+    btn.disabled = true;
+    const first = !revOf(w.id, me()), text = R.text.trim();
+    try { await S.api.saveReview(w.id, R.stars, text); } catch (err) { btn.disabled = false; return toast(errMsg(err)); }
+    (S.reviews[w.id] || (S.reviews[w.id] = {}))[me()] = { stars: R.stars, review: text, created_at: new Date().toISOString() };
+    S.revEdit = false; S.revDraft = null;
+    drawSheet(); renderTab();
+    toast(!first ? "별점을 고쳤어요" : revOf(w.id, pid()) ? "별점이 열렸어요 💞" : "별점을 남겼어요");
+  } }, init ? "고치기" : "별점 남기기");
+  return h("div", { class: "field" }, stars, ta, btn);
+}
+
+/* ---------------- 영화 (질문 탭 안) ---------------- */
+function movieCard() {
+  const all = S.wishes.filter((w) => w.kind === "movie"), done = all.filter((w) => w.done_on).length;
+  const lock = waitingRevs("movie").length;
+  return h("button", { class: "cat wide", onclick: () => { S.qCat = "movie"; renderTab(); window.scrollTo(0, 0); } },
+    h("div", { class: "row" }, h("span", { class: "ic" }, "🎬"), h("span", { class: "nm grow" }, "같이 볼 영화"),
+      lock ? h("span", { class: "chip" }, `🔒 ${lock}`) : null),
+    h("span", { class: "tiny" }, "보고 싶은 영화를 모아 두고, 같이 본 뒤엔 별점을 남겨요"),
+    h("span", { class: "tiny" }, `볼 영화 ${all.length - done}편 · 본 영화 ${done}편`));
+}
+function renderMovies() {
+  const all = S.wishes.filter((w) => w.kind === "movie");
+  const todo = all.filter((w) => !w.done_on), done = all.filter((w) => w.done_on);
+  const showDone = S.wishTab.movie === "done", list = sortWishes(showDone ? done : todo, showDone);
+  view(
+    h("div", { class: "row" }, h("button", { class: "navbtn", "aria-label": "뒤로", onclick: () => { S.qCat = null; renderTab(); } }, "‹"),
+      h("div", { class: "title grow" }, "🎬 같이 볼 영화")),
+    h("p", { class: "sub" }, "보고 싶은 영화를 적어 두고, 같이 본 다음엔 둘 다 별점을 남겨요. 별점은 둘 다 남겨야 서로 보여요."),
+    wishNote() || addMovieForm(),
+    wishSeg("movie", todo.length, done.length, ["볼 영화", "본 영화"]),
+    list.length ? h("div", { class: "qlist" }, list.map(wishItem))
+      : h("p", { class: "empty" }, showDone ? "같이 본 영화가 여기에 쌓여요" : "보고 싶은 영화를 위에 적어 보세요"),
+  );
+}
+function addMovieForm() {
+  const k = "movie-new";
+  const inp = h("input", { class: "input grow", placeholder: "보고 싶은 영화 제목", maxlength: 100, "data-k": k, enterkeyhint: "done",
+    oninput: () => { S.drafts[k] = inp.value; } });
+  inp.value = S.drafts[k] || "";
+  const btn = h("button", { class: "btn", type: "submit" }, "담기");
+  return h("form", { class: "row", onsubmit: async (e) => {
+    e.preventDefault();
+    const t = inp.value.trim();
+    if (!t) return toast("영화 제목을 적어 주세요");
+    const dup = S.wishes.find((w) => w.kind === "movie" && norm(w.title) === norm(t));
+    if (dup) return toast(dup.done_on ? "이미 같이 본 영화예요" : "이미 목록에 있는 영화예요");
+    btn.disabled = true;
+    let w;
+    try { w = await S.api.addWish({ kind: "movie", title: t }); } catch (err) { btn.disabled = false; return toast(errMsg(err)); }
+    S.wishes.push(w); S.drafts[k] = ""; S.wishTab.movie = "todo";
+    renderTab(); toast("🎬 목록에 담았어요");
+  } }, inp, btn);
+}
+
+/* ---------------- 지도 (카카오맵) ---------------- */
+// 지도는 한 번 만들어 두고, 탭을 다시 그릴 때마다 같은 지도를 다시 붙인다 (보던 위치·확대가 유지된다)
+const MAP = { box: null, el: null, msg: null, map: null, pins: [], temp: null, loading: null, fitted: false, cur: [] };
+function loadKakao() {
+  if (window.kakao && window.kakao.maps && window.kakao.maps.services) return Promise.resolve();
+  if (!MAP.loading) MAP.loading = new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = "https://dapi.kakao.com/v2/maps/sdk.js?autoload=false&libraries=services&appkey=" + encodeURIComponent(CFG.kakaoMapKey);
+    const timer = setTimeout(() => rej(new Error("kakao_timeout")), 15000);
+    s.onload = () => {
+      try { window.kakao.maps.load(() => { clearTimeout(timer); res(); }); }
+      catch (e) { clearTimeout(timer); rej(e); }
+    };
+    s.onerror = () => { clearTimeout(timer); rej(new Error("kakao_load")); };
+    document.head.append(s);
+  }).catch((e) => { MAP.loading = null; throw e; });
+  return MAP.loading;
+}
+function mapBox() {
+  if (!MAP.box) {
+    MAP.el = h("div", { class: "kmap" });
+    MAP.msg = h("div", { class: "kmap-msg" }, "지도를 불러오는 중…");
+    MAP.box = h("div", { class: "kmap-box" }, MAP.el, MAP.msg,
+      h("button", { class: "kmap-fit", onclick: () => fitPins(MAP.cur, true) }, "전체 보기"));
+  }
+  return MAP.box;
+}
+const hasPos = (w) => w.lat != null && w.lng != null;
+function renderMap() {
+  const all = S.wishes.filter((w) => w.kind === "place");
+  const todo = all.filter((w) => !w.done_on), done = all.filter((w) => w.done_on);
+  const showDone = S.wishTab.place === "done", shown = sortWishes(showDone ? done : todo, showDone);
+  const note = wishNote(), key = !!CFG.kakaoMapKey;
+  const parts = [h("div", { class: "title" }, "지도"), h("p", { class: "sub", style: { marginTop: "-8px" } }, "같이 가 보고 싶은 곳을 찾아서 핀을 꽂아 둬요")];
+  if (note) parts.push(note);
+  else if (!key) parts.push(h("div", { class: "banner" }, "지도를 띄우려면 카카오맵 키가 필요해요. config.js의 kakaoMapKey에 넣어 주세요 (README ‘지도 설정’)"));
+  else {
+    parts.push(placeSearchForm());
+    if (S.mapResults) parts.push(resultsEl());
+    parts.push(mapBox());
+  }
+  parts.push(wishSeg("place", todo.length, done.length, ["가고 싶은 곳", "다녀온 곳"]),
+    shown.length ? h("div", { class: "qlist" }, shown.map(wishItem))
+      : h("p", { class: "empty" }, showDone ? "같이 다녀온 곳이 여기에 쌓여요" : key && !note ? "위에서 장소를 검색해 저장해 보세요" : "아직 저장한 곳이 없어요"));
+  view(...parts);
+  if (key && !note) mountMap(shown);
+}
+function mountMap(places) {
+  MAP.cur = places;
+  loadKakao().then(() => {
+    if (S.tab !== "map" || !MAP.box.isConnected) return;
+    const K = window.kakao.maps;
+    if (!MAP.map) {
+      MAP.map = new K.Map(MAP.el, { center: new K.LatLng(37.5665, 126.978), level: 8 });
+      MAP.msg.classList.add("hide");
+    } else {
+      const c = MAP.map.getCenter(); MAP.map.relayout(); MAP.map.setCenter(c);   // 다시 붙였으니 크기를 다시 잰다
+    }
+    drawPins(places);
+    const f = S.mapFocus && places.find((w) => w.id === S.mapFocus);
+    S.mapFocus = null;
+    if (f) focusPlace(f);
+    else if (!MAP.fitted) fitPins(places);
+  }).catch((e) => {
+    console.warn(e);
+    MAP.msg.textContent = "카카오맵을 불러오지 못했어요. 인터넷 연결이나, 카카오 개발자 사이트의 키·사이트 도메인 등록을 확인해 주세요";
+    MAP.msg.classList.remove("hide");
+  });
+}
+function pinEl(cls, ic, label, onclick) {
+  return h("button", { class: "pin " + cls, "aria-label": label, title: label, onclick }, h("span", {}, ic));
+}
+function drawPins(places) {
+  const K = window.kakao.maps;
+  for (const o of MAP.pins) o.setMap(null);
+  MAP.pins = places.filter(hasPos).map((w) => {
+    const o = new K.CustomOverlay({ position: new K.LatLng(w.lat, w.lng), yAnchor: 1.2, clickable: true,
+      content: pinEl(w.done_on ? "done" : "", (PCAT[w.place_cat] || PCAT.etc).ic, w.title, () => openWish(w.id)) });
+    o.setMap(MAP.map);
+    return o;
+  });
+}
+function fitPins(places, always) {
+  if (!MAP.map) return;
+  const K = window.kakao.maps, pts = places.filter(hasPos);
+  if (!pts.length) { if (always) toast("지도에 표시할 곳이 없어요"); return; }
+  MAP.fitted = true;
+  if (pts.length === 1) { MAP.map.setLevel(5); MAP.map.setCenter(new K.LatLng(pts[0].lat, pts[0].lng)); return; }
+  const b = new K.LatLngBounds();
+  for (const w of pts) b.extend(new K.LatLng(w.lat, w.lng));
+  MAP.map.setBounds(b, 40, 40, 40, 40);
+}
+function focusPlace(w) {
+  if (!MAP.map || !hasPos(w)) return;
+  if (MAP.map.getLevel() > 5) MAP.map.setLevel(5);
+  MAP.map.panTo(new window.kakao.maps.LatLng(w.lat, w.lng));
+}
+function showTemp(lat, lng, label) {
+  clearTemp();
+  if (!MAP.map) return;
+  const K = window.kakao.maps;
+  MAP.temp = new K.CustomOverlay({ position: new K.LatLng(lat, lng), yAnchor: 1.2, content: pinEl("temp", "📌", label) });
+  MAP.temp.setMap(MAP.map);
+  if (MAP.map.getLevel() > 5) MAP.map.setLevel(5);
+  MAP.map.panTo(new K.LatLng(lat, lng));
+}
+function clearTemp() { if (MAP.temp) { MAP.temp.setMap(null); MAP.temp = null; } }
+
+function placeSearchForm() {
+  const k = "map-q";
+  const inp = h("input", { class: "input grow", type: "search", placeholder: "장소 검색 (예: 성수 카페, 해운대)", "data-k": k,
+    enterkeyhint: "search", oninput: () => { S.drafts[k] = inp.value; } });
+  inp.value = S.drafts[k] || "";
+  return h("form", { class: "row", onsubmit: (e) => {
+    e.preventDefault();
+    const q = inp.value.trim();
+    if (!q) return toast("찾을 장소를 적어 주세요");
+    inp.blur();          // 폰 키보드를 내려서 결과가 보이게
+    searchPlaces(q);
+  } }, inp, h("button", { class: "btn", type: "submit" }, "검색"));
+}
+async function searchPlaces(q) {
+  S.mapResults = { q, loading: true, list: [] };
+  renderTab();
+  try { await loadKakao(); } catch (e) { S.mapResults = null; renderTab(); return toast("카카오맵을 불러오지 못했어요"); }
+  const St = window.kakao.maps.services.Status;
+  new window.kakao.maps.services.Places().keywordSearch(q, (data, status) => {
+    if (!S.mapResults || S.mapResults.q !== q) return;         // 그사이 다른 걸 검색했다
+    if (status === St.ERROR) { S.mapResults = null; toast("검색하지 못했어요. 잠시 후 다시 해 주세요"); }
+    else S.mapResults = { q, loading: false, list: status === St.OK ? data.slice(0, 15) : [] };
+    if (S.tab === "map") renderTab();
+  });
+}
+const sameSpot = (w, r) => w.kind === "place" && ((w.place_url && w.place_url === r.place_url)
+  || (w.title === r.place_name && hasPos(w) && Math.abs(w.lat - Number(r.y)) < 1e-4 && Math.abs(w.lng - Number(r.x)) < 1e-4));
+function resultsEl() {
+  const R = S.mapResults;
+  const head = h("div", { class: "row" },
+    h("div", { class: "sec grow", style: { margin: "0 2px" } }, R.loading ? "찾는 중…" : `‘${R.q}’ 검색 결과 ${R.list.length}개`),
+    h("button", { class: "link", onclick: () => { S.mapResults = null; clearTemp(); renderTab(); } }, "닫기"));
+  if (R.loading) return h("div", { class: "results" }, head);
+  if (!R.list.length) return h("div", { class: "results" }, head, h("p", { class: "empty" }, "검색 결과가 없어요. 다른 이름으로 찾아보세요"));
+  return h("div", { class: "results" }, head, h("div", { class: "res-list" }, R.list.map((r) => {
+    const saved = S.wishes.find((w) => sameSpot(w, r));
+    return h("button", { class: "res-it", onclick: () => (saved ? openWish(saved.id) : openNewPlace(r)) },
+      h("span", { class: "t" }, h("span", { class: "wt" }, r.place_name), h("span", { class: "tiny wsub" }, r.road_address_name || r.address_name)),
+      h("span", { class: "chip" + (saved ? " mint" : " gray") }, saved ? "저장됨" : (r.category_group_name || "장소")));
+  })));
+}
+function openNewPlace(r) {
+  const F = { cat: KCAT[r.category_group_code] || "etc", memo: "", busy: false };
+  showTemp(Number(r.y), Number(r.x), r.place_name);
+  openSheet(() => drawNewPlace(r, F), { onClose: clearTemp });
+}
+function drawNewPlace(r, F) {
+  const memo = h("textarea", { class: "textarea", maxlength: 500, style: { minHeight: "80px" },
+    placeholder: "여기서 뭐 하고 싶어? (선택)", oninput: () => { F.memo = memo.value; } });
+  memo.value = F.memo;
+  const add = async (done) => {
+    if (F.busy) return;
+    F.busy = true;
+    let w;
+    try {
+      w = await S.api.addWish({ kind: "place", title: r.place_name, memo: F.memo.trim(), lat: Number(r.y), lng: Number(r.x),
+        address: r.road_address_name || r.address_name || null, place_url: r.place_url || null, place_cat: F.cat, done_on: done ? today() : null });
+    } catch (err) { F.busy = false; return toast(errMsg(err)); }
+    S.wishes.push(w); S.wishTab.place = done ? "done" : "todo"; S.mapResults = null; S.mapFocus = w.id;
+    closeSheet(); renderTab();
+    toast(done ? "다녀온 곳에 저장했어요 · 별점을 남겨 보세요" : "가고 싶은 곳에 저장했어요 📍");
+  };
+  const addr = r.road_address_name || r.address_name;
+  return [
+    h("span", { class: "chip sky", style: { alignSelf: "flex-start" } }, r.category_name ? r.category_name.split(" > ").pop() : "장소"),
+    h("div", { class: "q-big" }, r.place_name),
+    addr ? h("div", { class: "sub", style: { marginTop: "-8px" } }, addr) : null,
+    r.place_url ? h("a", { class: "link", href: r.place_url, target: "_blank", rel: "noopener" }, "카카오맵에서 자세히 보기") : null,
+    h("div", { class: "sec" }, "분류"),
+    pcatPicker(F.cat, (k) => { F.cat = k; }),
+    memo,
+    h("button", { class: "btn wide", onclick: () => add(false) }, "📍 가고 싶은 곳에 저장"),
+    h("button", { class: "btn wide line", onclick: () => add(true) }, "✅ 이미 다녀온 곳이에요"),
+  ];
+}
+
 /* ---------------- 우리 (설정) ---------------- */
 function renderUs() {
   const p = partner(), demo = S.api.kind === "demo";
@@ -1149,7 +1620,7 @@ function renderUs() {
       h("button", { class: "it", onclick: logout }, h("span", { class: "grow" }, "로그아웃")));
   }
   parts.push(list);
-  parts.push(h("button", { class: "btn ghost", onclick: leave }, "커플 연결 끊기"), h("p", { class: "tiny center" }, "둘이서 · v1"));
+  parts.push(h("button", { class: "btn ghost", onclick: leave }, "커플 연결 끊기"), h("p", { class: "tiny center" }, "둘이서 · v2"));
   view(...parts);
 }
 async function demoSwitch() {
@@ -1199,7 +1670,7 @@ async function boot() {
 }
 // 앱으로 돌아오면 놓친 변경을 한 번 더 받아 온다
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && S.couple) ["couples", "answers", "balance_picks", "room_items", "entries"].forEach(onRemote);
+  if (document.visibilityState === "visible" && S.couple) ["couples", "answers", "balance_picks", "room_items", "entries", "wishes"].forEach(onRemote);
 });
 
 // 테스트에서 들여다볼 수 있게 열어 둔다

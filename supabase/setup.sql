@@ -76,6 +76,36 @@ create table if not exists public.room_items (
 );
 create index if not exists room_items_couple on public.room_items(couple_id);
 
+-- 같이 하고 싶은 것 목록 — 영화(movie) · 가고 싶은 곳(place). done_on = 같이 본 날 / 다녀온 날
+create table if not exists public.wishes (
+  id         uuid primary key default gen_random_uuid(),
+  couple_id  uuid not null references public.couples(id) on delete cascade,
+  kind       text not null check (kind in ('movie','place')),
+  title      text not null check (char_length(title) between 1 and 200),
+  memo       text not null default '',
+  added_by   uuid default auth.uid() references auth.users(id) on delete set null,
+  done_on    date,
+  lat        double precision,              -- 장소만: 카카오맵 좌표
+  lng        double precision,
+  address    text,
+  place_url  text,                          -- 카카오맵 장소 페이지
+  place_cat  text,                          -- food · cafe · play · trip · etc
+  created_at timestamptz not null default now()
+);
+create index if not exists wishes_couple on public.wishes(couple_id);
+
+-- 같이 본 영화 · 다녀온 곳의 별점 (한 사람당 하나)
+create table if not exists public.wish_reviews (
+  wish_id    uuid not null references public.wishes(id) on delete cascade,
+  couple_id  uuid not null references public.couples(id) on delete cascade,
+  user_id    uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  stars      smallint not null check (stars between 1 and 5),
+  review     text not null default '',
+  created_at timestamptz not null default now(),
+  primary key (wish_id, user_id)
+);
+create index if not exists wish_reviews_couple on public.wish_reviews(couple_id);
+
 -- ---------- 멤버 확인 함수 ----------
 -- security definer: 정책 안에서 couple_members를 다시 읽을 때 생기는 RLS 무한 재귀를 막는다.
 create or replace function public.is_member(cid uuid)
@@ -95,6 +125,8 @@ alter table public.entries        enable row level security;
 alter table public.answers        enable row level security;
 alter table public.balance_picks  enable row level security;
 alter table public.room_items     enable row level security;
+alter table public.wishes         enable row level security;
+alter table public.wish_reviews   enable row level security;
 
 drop policy if exists couples_select on public.couples;
 create policy couples_select on public.couples for select to authenticated using (public.is_member(id));
@@ -149,11 +181,40 @@ create policy room_update on public.room_items for update to authenticated
 drop policy if exists room_delete on public.room_items;
 create policy room_delete on public.room_items for delete to authenticated using (public.is_member(couple_id));
 
+-- 목록은 둘이 같이 쓴다 (누가 담았든 둘 다 고치고 지울 수 있다)
+drop policy if exists wishes_select on public.wishes;
+create policy wishes_select on public.wishes for select to authenticated using (public.is_member(couple_id));
+drop policy if exists wishes_insert on public.wishes;
+create policy wishes_insert on public.wishes for insert to authenticated
+  with check (public.is_member(couple_id) and added_by = auth.uid());
+drop policy if exists wishes_update on public.wishes;
+create policy wishes_update on public.wishes for update to authenticated
+  using (public.is_member(couple_id)) with check (public.is_member(couple_id));
+drop policy if exists wishes_delete on public.wishes;
+create policy wishes_delete on public.wishes for delete to authenticated using (public.is_member(couple_id));
+
+-- 별점은 내 것만 쓰고 고친다. 같은 커플의 목록에만 달 수 있다
+drop policy if exists wish_reviews_select on public.wish_reviews;
+create policy wish_reviews_select on public.wish_reviews for select to authenticated using (public.is_member(couple_id));
+drop policy if exists wish_reviews_insert on public.wish_reviews;
+create policy wish_reviews_insert on public.wish_reviews for insert to authenticated
+  with check (public.is_member(couple_id) and user_id = auth.uid()
+              and exists (select 1 from public.wishes w where w.id = wish_id and w.couple_id = wish_reviews.couple_id));
+drop policy if exists wish_reviews_update on public.wish_reviews;
+create policy wish_reviews_update on public.wish_reviews for update to authenticated
+  using (user_id = auth.uid())
+  with check (public.is_member(couple_id) and user_id = auth.uid()
+              and exists (select 1 from public.wishes w where w.id = wish_id and w.couple_id = wish_reviews.couple_id));
+drop policy if exists wish_reviews_delete on public.wish_reviews;
+create policy wish_reviews_delete on public.wish_reviews for delete to authenticated using (user_id = auth.uid());
+
 -- 앱에서 고칠 수 있는 칸만 열어 둔다. 초대 코드·구성원 기록·소속 커플은 아래 함수로만 바뀐다.
 revoke update on public.couples from anon, authenticated;
 grant  update (start_date, wall, floor) on public.couples to authenticated;
 revoke update on public.couple_members from anon, authenticated;
 grant  update (nickname) on public.couple_members to authenticated;
+revoke update on public.wishes from anon, authenticated;
+grant  update (title, memo, done_on, place_cat) on public.wishes to authenticated;
 
 -- ---------- 커플 만들기 / 초대 코드로 들어가기 / 연결 끊기 ----------
 create or replace function public.create_couple(p_nickname text, p_start date)
@@ -243,7 +304,7 @@ create policy "duriseo photos delete" on storage.objects for delete to authentic
 do $$
 declare t text;
 begin
-  foreach t in array array['couples','couple_members','entries','answers','balance_picks','room_items'] loop
+  foreach t in array array['couples','couple_members','entries','answers','balance_picks','room_items','wishes','wish_reviews'] loop
     begin
       execute format('alter publication supabase_realtime add table public.%I', t);
     exception when duplicate_object then null;   -- 이미 등록됨
