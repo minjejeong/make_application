@@ -10,5 +10,5 @@
 window.DURISEO_CONFIG = {
   supabaseUrl: "https://wlufnzpyhyrxpahvnnbg.supabase.co",
   supabaseAnonKey: "sb_publishable_-wMJ2rRUOhkpG-BF6NddPw_2C3yoiKG",
-  kakaoMapKey: "",
+  kakaoMapKey: "da38ed4da5ac7ce5b765cf126f065f54",
 };
