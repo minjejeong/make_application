@@ -4,6 +4,6 @@
    service_role 키나 sb_secret_ 키는 절대 여기 넣지 말 것.
    비어 있으면 앱이 '데모 모드'로만 열린다. */
 window.DURISEO_CONFIG = {
-  supabaseUrl: "",
-  supabaseAnonKey: "",
+  supabaseUrl: "https://wlufnzpyhyrxpahvnnbg.supabase.co",
+  supabaseAnonKey: "sb_publishable_-wMJ2rRUOhkpG-BF6NddPw_2C3yoiKG",
 };
