@@ -1,7 +1,7 @@
 /* 둘이서 — 오프라인 지원
    앱 파일을 캐시에 담아 인터넷이 약해도 화면은 뜨게 한다. (데이터는 Supabase에서 온다)
    앱 파일을 고친 뒤에는 아래 CACHE 버전을 올려야 설치된 폰에도 반영된다. */
-const CACHE = "duriseo-v2";
+const CACHE = "duriseo-v3";
 
 const ASSETS = [
   "./",
@@ -26,11 +26,19 @@ self.addEventListener("install", (e) => {
 });
 
 self.addEventListener("activate", (e) => {
-  e.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim())
-  );
+  e.waitUntil((async () => {
+    const keys = await caches.keys();
+    // 옛 '둘이서 한잔'(doori-*)은 화면까지 캐시 우선이라, 앱을 열면 옛 화면이 먼저 뜬다
+    const fromOldApp = keys.some((k) => k.startsWith("doori-"));
+    await Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)));
+    await self.clients.claim();
+    // 그 옛 화면을 새 앱으로 다시 연다 (한 번뿐 — 옛 캐시는 위에서 지워졌다)
+    if (fromOldApp) {
+      const wins = await self.clients.matchAll({ type: "window" });
+      // navigate를 못 쓰는 브라우저는 그냥 넘어간다 (앱을 껐다 켜면 새 앱이 열린다)
+      await Promise.all(wins.map((w) => Promise.resolve().then(() => w.navigate(w.url)).catch(() => {})));
+    }
+  })());
 });
 
 const put = (req, res) => {
